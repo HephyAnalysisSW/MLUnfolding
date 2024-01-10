@@ -6,13 +6,13 @@ import ROOT
 import logging
 logger = logging.getLogger(__name__)
 
-from MLunfolding.samples.color import color
+from MLUnfolding.samples.color import color
 
 # Data directory
 try:
     directory_ = sys.modules['__main__'].directory_
 except:
-    import MLunfolding.samples.sample_locations as locations
+    import MLUnfolding.samples.sample_locations as locations
     directory_ = locations.mc_2016
 
 logger.info("Loading MC samples from directory %s", directory_)

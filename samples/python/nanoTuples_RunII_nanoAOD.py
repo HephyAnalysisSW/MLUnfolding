@@ -1,8 +1,8 @@
 from RootTools.core.standard import *
 
-import MLunfolding.samples.nanoTuples_2016_nanoAOD as Run2016
-import MLunfolding.samples.nanoTuples_2017_nanoAOD as Run2017
-import MLunfolding.samples.nanoTuples_2018_nanoAOD as Run2018
+import MLUnfolding.samples.nanoTuples_2016_nanoAOD as Run2016
+import MLUnfolding.samples.nanoTuples_2017_nanoAOD as Run2017
+import MLUnfolding.samples.nanoTuples_2018_nanoAOD as Run2018
 
 
 TTbar = Sample.combine( "TTbar", [Run2016.TTbar, Run2017.TTbar, Run2018.TTbar],texName = "t#bar{t}")

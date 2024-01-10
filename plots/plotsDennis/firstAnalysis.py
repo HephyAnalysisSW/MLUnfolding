@@ -19,8 +19,8 @@ from math                                import sqrt, cos, sin, pi, atan2, cosh,
 from RootTools.core.standard             import *
 
 # MTopCorrelations
-from MLunfolding.Tools.user                      import plot_directory
-from MLunfolding.Tools.cutInterpreter            import cutInterpreter
+from MLUnfolding.Tools.user                      import plot_directory
+from MLUnfolding.Tools.cutInterpreter            import cutInterpreter
 
 # Analysis
 from Analysis.Tools.helpers              import deltaPhi, deltaR
@@ -33,21 +33,21 @@ import numpy as np
 import argparse
 argParser = argparse.ArgumentParser(description = "Argument parser")
 argParser.add_argument('--logLevel',       action='store',      default='INFO', nargs='?', choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'TRACE', 'NOTSET'], help="Log level for logging")
-argParser.add_argument('--plot_directory', action='store', default='MLunfolding_v1')
+argParser.add_argument('--plot_directory', action='store', default='MLUnfolding_v1')
 argParser.add_argument('--selection',      action='store', default='noSelection')
 argParser.add_argument('--era',            action='store', type=str, default="Run2018")
 args = argParser.parse_args()
 
 ################################################################################
 # Logger
-import MLunfolding.Tools.logger as logger
+import MLUnfolding.Tools.logger as logger
 logger    = logger.get_logger(   args.logLevel, logFile = None)
 import RootTools.core.logger as logger_rt
 logger_rt = logger_rt.get_logger(args.logLevel, logFile = None)
 
 ################################################################################
 # Define the MC samples
-from MLunfolding.samples.nanoTuples_RunII_nanoAOD import *
+from MLUnfolding.samples.nanoTuples_RunII_nanoAOD import *
 
 lumi_scale = 0
 if args.era == "Run2016":
