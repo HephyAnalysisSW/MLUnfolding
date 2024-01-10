@@ -1,6 +1,8 @@
 # MLUnfolding
 
-## Install
+## Installation instructions
+
+1. Setup the framework with most important pieces  
 ```
 cmsrel CMSSW_10_6_28
 cd CMSSW_10_6_28/src
@@ -13,3 +15,5 @@ curl -sLO https://gist.githubusercontent.com/dietrichliko/8aaeec87556d6dd2f60d8d
 . ./install_correctionlib.sh
 scram b -j10
 ```
+
+2. Add user information to ```Tools/python/user.py``` and create a directory in ```plots```
