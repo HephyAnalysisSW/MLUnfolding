@@ -11,6 +11,8 @@ mIsoWP = { "VT":5, "T":4, "M":3 , "L":2 , "VL":1, 0:"None" }
 
 special_cuts = {
     "noSelection":       "",
+    "rec":               "passed_measurement_rec==1",
+    "gen":               "passed_measurement_gen==1",
 }
 
 continous_variables = [('ht','Sum$(JetGood_pt*(JetGood_pt>30&&abs(JetGood_eta)<2.4))'), ("met", "met_pt"), ("Z2mass", "Z2_mass"), ("Z1mass", "Z1_mass"), ("minDLmass", "minDLmass"), ("mT", "mT")]

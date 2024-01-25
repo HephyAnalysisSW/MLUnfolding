@@ -110,10 +110,43 @@ def drawPlots(plots):
 sequence       = []
 
 def buildSubjets( event, sample ):
+
+    # RECO
     sub1_rec = ROOT.TLorentzVector()
     sub1_rec.SetPxPyPzE(event.sub1_px_rec, event.sub1_py_rec, event.sub1_pz_rec, event.sub1_E_rec)
+    sub1_rec = sub1_rec * event.sub1_factor_cor * event.sub1_factor_jec * event.sub1_factor_jer
 
-    event.sub1_pt_rec = sub1_rec.Pt()
+    sub2_rec = ROOT.TLorentzVector()
+    sub2_rec.SetPxPyPzE(event.sub2_px_rec, event.sub2_py_rec, event.sub2_pz_rec, event.sub2_E_rec)
+    sub2_rec = sub2_rec * event.sub2_factor_cor * event.sub2_factor_jec * event.sub2_factor_jer
+
+    sub3_rec = ROOT.TLorentzVector()
+    sub3_rec.SetPxPyPzE(event.sub3_px_rec, event.sub3_py_rec, event.sub3_pz_rec, event.sub3_E_rec)
+    sub3_rec = sub3_rec * event.sub3_factor_cor * event.sub3_factor_jec * event.sub3_factor_jer
+
+    jet_rec = sub1_rec+sub2_rec+sub3_rec
+    event.jet_rec_pt = jet_rec.Pt()
+
+    # GEN
+    sub1_gen = ROOT.TLorentzVector()
+    sub1_gen.SetPxPyPzE(event.sub1_px_gen, event.sub1_py_gen, event.sub1_pz_gen, event.sub1_E_gen)
+    sub2_gen = ROOT.TLorentzVector()
+    sub2_gen.SetPxPyPzE(event.sub2_px_gen, event.sub2_py_gen, event.sub2_pz_gen, event.sub2_E_gen)
+    sub3_gen = ROOT.TLorentzVector()
+    sub3_gen.SetPxPyPzE(event.sub3_px_gen, event.sub3_py_gen, event.sub3_pz_gen, event.sub3_E_gen)
+
+    jet_gen = sub1_gen+sub2_gen+sub3_gen
+
+    event.jet_rec_pt = jet_rec.Pt()
+
+
+    # weight
+    weight = event.gen_weight
+    if event.passed_measurement_rec:
+        weight *= event.rec_weight
+
+    event.weight = weight
+
 sequence.append(buildSubjets)
 
 ################################################################################
@@ -121,17 +154,28 @@ sequence.append(buildSubjets)
 
 read_variables = [
     "rec_weight/F", "gen_weight/F",
+
     "sub1_E_rec/F", "sub1_px_rec/F", "sub1_py_rec/F", "sub1_pz_rec/F",
+    "sub1_factor_jer/F", "sub1_factor_jec/F", "sub1_factor_cor/F",
+
     "sub2_E_rec/F", "sub2_px_rec/F", "sub2_py_rec/F", "sub2_pz_rec/F",
+    "sub2_factor_jer/F", "sub2_factor_jec/F", "sub2_factor_cor/F",
+
     "sub3_E_rec/F", "sub3_px_rec/F", "sub3_py_rec/F", "sub3_pz_rec/F",
+    "sub3_factor_jer/F", "sub3_factor_jec/F", "sub3_factor_cor/F",
+
+
     "sub1_E_gen/F", "sub1_px_gen/F", "sub1_py_gen/F", "sub1_pz_gen/F",
     "sub2_E_gen/F", "sub2_px_gen/F", "sub2_py_gen/F", "sub2_pz_gen/F",
     "sub3_E_gen/F", "sub3_px_gen/F", "sub3_py_gen/F", "sub3_pz_gen/F",
+
+    "passed_measurement_rec/F",
+    "passed_measurement_gen/F",
 ]
 
 ################################################################################
 # Set up plotting
-weightnames = ['gen_weight']
+weightnames = ["weight"]
 getters = map(operator.attrgetter, weightnames)
 def weight_function( event, sample):
     # Calculate weight, this becomes: w = event.weightnames[0]*event.weightnames[1]*...
@@ -155,10 +199,10 @@ Plot.setDefaults(stack = stack, weight = staticmethod(weight_), selectionString 
 plots = []
 
 plots.append(Plot(
-    name = "sub1_pt_rec",
-    texX = 'Leading subjet p_{T} [GeV]', texY = 'Number of Events',
-    attribute = lambda event, sample: event.sub1_pt_rec,
-    binning=[25, 0., 500.],
+    name = "jet_rec_pt",
+    texX = 'Jet p_{T} [GeV]', texY = 'Number of Events',
+    attribute = lambda event, sample: event.jet_rec_pt,
+    binning=[40, 0., 2000.],
 ))
 
 plotting.fill(plots, read_variables = read_variables, sequence = sequence)
@@ -167,7 +211,7 @@ drawPlots(plots)
 
 # Also store plots in root file
 logger.info( "Now write results in root files." )
-plots_root = ["sub1_pt_rec"]
+plots_root = ["jet_rec_pt"]
 plot_dir = os.path.join(plot_directory, 'analysisPlots', args.plot_directory, args.era, "lin", args.selection)
 if not os.path.exists(plot_dir):
     try:
