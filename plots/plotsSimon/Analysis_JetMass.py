@@ -24,6 +24,9 @@ from MLUnfolding.Tools.cutInterpreter            import cutInterpreter
 
 # Analysis
 from Analysis.Tools.helpers              import deltaPhi, deltaR
+from Analysis.Tools.puReweighting        import getReweightingFunction
+from Analysis.Tools.WeightInfo           import WeightInfo
+
 
 # import Analysis.Tools.syncer # Update Cern Web Directory
 import numpy as np
@@ -33,7 +36,7 @@ import numpy as np
 import argparse
 argParser = argparse.ArgumentParser(description = "Argument parser")
 argParser.add_argument('--logLevel',       action='store',      default='INFO', nargs='?', choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'TRACE', 'NOTSET'], help="Log level for logging")
-argParser.add_argument('--plot_directory', action='store', default='MLUnfolding_v2')
+argParser.add_argument('--plot_directory', action='store', default='MLUnfolding_v3')
 argParser.add_argument('--selection',      action='store', default='noSelection')
 argParser.add_argument('--era',            action='store', type=str, default="Run2018")
 args = argParser.parse_args()
@@ -63,7 +66,7 @@ elif args.era == "RunII":
     mc = [TTbar]
     lumi_scale = 138
 
-
+#coment
 ################################################################################
 # Modify plotdir
 
@@ -120,9 +123,13 @@ def buildSubjets( event, sample ):
     sub3_gen = ROOT.TLorentzVector()
     tmp_gen  = ROOT.TLorentzVector()
     
-    sub1_rec.SetPxPyPzE(event.sub1_px_rec, event.sub1_py_rec, event.sub1_pz_rec, event.sub1_E_rec)
-    sub2_rec.SetPxPyPzE(event.sub2_px_rec, event.sub2_py_rec, event.sub2_pz_rec, event.sub2_E_rec)
-    sub3_rec.SetPxPyPzE(event.sub3_px_rec, event.sub3_py_rec, event.sub3_pz_rec, event.sub3_E_rec)
+    sub1_corr= event.sub1_factor_cor * event.sub1_factor_jec * event.sub1_factor_jer
+    sub2_corr= event.sub2_factor_cor * event.sub2_factor_jec * event.sub2_factor_jer
+    sub3_corr= event.sub3_factor_cor * event.sub3_factor_jec * event.sub3_factor_jer
+
+    sub1_rec.SetPxPyPzE(event.sub1_px_rec * sub1_corr, event.sub1_py_rec * sub1_corr, event.sub1_pz_rec * sub1_corr, event.sub1_E_rec * sub1_corr)
+    sub2_rec.SetPxPyPzE(event.sub2_px_rec * sub2_corr, event.sub2_py_rec * sub2_corr, event.sub2_pz_rec * sub2_corr, event.sub2_E_rec * sub2_corr)
+    sub3_rec.SetPxPyPzE(event.sub3_px_rec * sub3_corr, event.sub3_py_rec * sub3_corr, event.sub3_pz_rec * sub3_corr, event.sub3_E_rec * sub3_corr)    
     
     sub1_gen.SetPxPyPzE(event.sub1_px_gen, event.sub1_py_gen, event.sub1_pz_gen, event.sub1_E_gen)
     sub2_gen.SetPxPyPzE(event.sub2_px_gen, event.sub2_py_gen, event.sub2_pz_gen, event.sub2_E_gen)
@@ -131,6 +138,18 @@ def buildSubjets( event, sample ):
     tmp_rec = sub1_rec + sub2_rec + sub3_rec
     tmp_gen = sub1_gen + sub2_gen + sub3_gen
     
+    weight = event.gen_weight
+
+    if event.passed_measurement_rec!=0 : 
+        weight *= event.rec_weight
+
+        
+    # if event.passed_measurement_rec!=0 : event.Mrec= tmp_rec.M()
+    # elif: event.Mrec= float("nan")
+    
+    # if event.passed_measurement_gen!=0 : event.Mgen= tmp_gen.M()
+    # elif: event.Mgen= float("nan")
+    event.weight=weight
     event.Mrec= tmp_rec.M()
     event.Mgen= tmp_gen.M()
     
@@ -149,11 +168,16 @@ read_variables = [
     "sub1_E_gen/F", "sub1_px_gen/F", "sub1_py_gen/F", "sub1_pz_gen/F",
     "sub2_E_gen/F", "sub2_px_gen/F", "sub2_py_gen/F", "sub2_pz_gen/F",
     "sub3_E_gen/F", "sub3_px_gen/F", "sub3_py_gen/F", "sub3_pz_gen/F",
+    "sub1_factor_cor/F", "sub1_factor_jec/F", "sub1_factor_jer/F",
+    "sub2_factor_cor/F", "sub2_factor_jec/F", "sub2_factor_jer/F",
+    "sub3_factor_cor/F", "sub3_factor_jec/F", "sub3_factor_jer/F",
+    "passed_measurement_gen/F",
+    "passed_measurement_rec/F"
 ]
 
 ################################################################################
 # Set up plotting
-weightnames = ['gen_weight']
+weightnames = ['weight']
 getters = map(operator.attrgetter, weightnames)
 def weight_function( event, sample):
     # Calculate weight, this becomes: w = event.weightnames[0]*event.weightnames[1]*...
@@ -168,13 +192,15 @@ for sample in mc:
 stack = Stack(mc)
 
 # Use some defaults
-weight_ = lambda event, sample: 1.
+weight_ = lambda event, sample: event.weight
 Plot.setDefaults(stack = stack, weight = staticmethod(weight_), selectionString = cutInterpreter.cutString(args.selection))
+Plot2D.setDefaults(stack = stack, weight = staticmethod(weight_), selectionString = cutInterpreter.cutString(args.selection))
 
 ################################################################################
 # Now define the plots
 
 plots = []
+plots2D = []
 
 plots.append(Plot(
     name = "Mrec",
@@ -183,13 +209,38 @@ plots.append(Plot(
     binning=[25, 0., 500.],
 ))
 
-plotting.fill(plots, read_variables = read_variables, sequence = sequence)
+plots.append(Plot(
+    name = "Mgen",
+    texX = 'Invariant Jet-Mass Gen-Par-Lvl [GeV]', texY = 'Number of Events',
+    attribute = lambda event, sample: event.Mgen,
+    binning=[25, 0., 500.],
+))
+
+boundaries_gen  = list(range(0,501,25))
+boundaries_rec = list(range(0,501,25))
+
+binning_gen  = Binning.fromThresholds(boundaries_gen)
+binning_rec = Binning.fromThresholds(boundaries_rec)
+
+
+plots2D.append(Plot2D(
+    name = "TransfereMatrix",
+    texX = 'Mgen', texY = 'Mrec',
+    attribute = (
+        lambda event, sample: event.Mgen,
+        lambda event, sample: event.Mrec,
+    ),
+    binning = [binning_gen, binning_rec],
+))
+
+plotting.fill(plots+plots2D, read_variables = read_variables, sequence = sequence)
 
 drawPlots(plots)
+drawPlots(plots2D)
 
 # Also store plots in root file
 logger.info( "Now write results in root files." )
-plots_root = ["sub1_pt_rec", "Mrec"]
+plots_root = ["Mgen", "Mrec","TransfereMatrix"]
 plot_dir = os.path.join(plot_directory, 'analysisPlots', args.plot_directory, args.era, "lin", args.selection)
 if not os.path.exists(plot_dir):
     try:
@@ -200,7 +251,7 @@ outfilename = plot_dir+'/Results.root'
 logger.info("Saving in %s"%outfilename)
 outfile = ROOT.TFile(outfilename, 'recreate')
 outfile.cd()
-for plot in plots:
+for plot in plots+plots2D:
     if plot.name in plots_root:
         for idx, histo_list in enumerate(plot.histos):
             for j, h in enumerate(histo_list):
