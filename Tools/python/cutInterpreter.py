@@ -13,6 +13,8 @@ special_cuts = {
     "noSelection":       "",
     "rec":               "passed_measurement_rec==1",
     "gen":               "passed_measurement_gen==1",
+    "gen_pass":          "passed_measurement_gen!=0",
+    "rec_pass":          "passed_measurement_rec!=0",
 }
 
 continous_variables = [('ht','Sum$(JetGood_pt*(JetGood_pt>30&&abs(JetGood_eta)<2.4))'), ("met", "met_pt"), ("Z2mass", "Z2_mass"), ("Z1mass", "Z1_mass"), ("minDLmass", "minDLmass"), ("mT", "mT")]
