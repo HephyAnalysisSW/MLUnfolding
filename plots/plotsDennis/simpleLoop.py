@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-''' Analysis script for standard plots
+''' Analysis script with event loop
 '''
 #
 # Standard imports and batch mode
@@ -63,53 +63,11 @@ elif args.era == "RunII":
     mc = [TTbar]
     lumi_scale = 138
 
-
-################################################################################
-# Modify plotdir
-
-################################################################################
-# Text on the plots
-tex = ROOT.TLatex()
-tex.SetNDC()
-tex.SetTextSize(0.04)
-tex.SetTextAlign(11) # align right
-
-################################################################################
-# Functions needed specifically for this analysis routine
-
-def drawObjects( plotData, lumi_scale ):
-    lines = [
-      (0.15, 0.95, 'CMS Preliminary' if plotData else 'CMS Simulation'),
-      (0.45, 0.95, 'L=%3.1f fb{}^{-1} (13 TeV) '% ( lumi_scale ) ) if plotData else (0.45, 0.95, 'L=%3.1f fb{}^{-1} (13 TeV)' % lumi_scale)
-    ]
-    return [tex.DrawLatex(*l) for l in lines]
-
-def drawPlots(plots):
-    for log in [False, True]:
-        plot_directory_ = os.path.join(plot_directory, 'analysisPlots', args.plot_directory, args.era, ("log" if log else "lin"), args.selection)
-        for plot in plots:
-            if not max(l.GetMaximum() for l in sum(plot.histos,[])): continue # Empty plot
-
-            _drawObjects = []
-            n_stacks=len(plot.histos)
-            plotData=False
-            if isinstance( plot, Plot):
-                plotting.draw(plot,
-                  plot_directory = plot_directory_,
-                  ratio =  None,
-                  logX = False, logY = log, sorting = True,
-                  yRange = (0.03, "auto") if log else (0.001, "auto"),
-                  scaling = {},
-                  legend = ( (0.18,0.88-0.03*sum(map(len, plot.histos)),0.9,0.88), 2),
-                  drawObjects = drawObjects( plotData , lumi_scale ) + _drawObjects,
-                  copyIndexPHP = True, extensions = ["png", "pdf", "root"],
-                )
-
 ################################################################################
 # Define sequences
 sequence       = []
 
-def buildSubjets( event, sample ):
+def buildJets( event, sample ):
 
     # RECO
     sub1_rec = ROOT.TLorentzVector()
@@ -136,18 +94,9 @@ def buildSubjets( event, sample ):
     sub3_gen.SetPxPyPzE(event.sub3_px_gen, event.sub3_py_gen, event.sub3_pz_gen, event.sub3_E_gen)
 
     jet_gen = sub1_gen+sub2_gen+sub3_gen
+    event.jet_gen_pt = jet_gen.Pt()
 
-    event.jet_rec_pt = jet_rec.Pt()
-
-
-    # weight
-    weight = event.gen_weight
-    if event.passed_measurement_rec:
-        weight *= event.rec_weight
-
-    event.weight = weight
-
-sequence.append(buildSubjets)
+sequence.append(buildJets)
 
 ################################################################################
 # Read variables
@@ -173,71 +122,47 @@ read_variables = [
     "passed_measurement_gen/F",
 ]
 
-################################################################################
-# Set up plotting
-weightnames = ["weight"]
-getters = map(operator.attrgetter, weightnames)
-def weight_function( event, sample):
-    # Calculate weight, this becomes: w = event.weightnames[0]*event.weightnames[1]*...
-    w = reduce(operator.mul, [g(event) for g in getters], 1)
-    return w
 
+################################################################################
+# Event loop
+h_pt_rec_noweight = {}
+h_pt_rec = {}
+h_pt_gen_noweight = {}
+h_pt_gen = {}
 
 for sample in mc:
-    sample.style = styles.fillStyle(sample.color)
-    sample.weight = weight_function
+    print "Running on", sample.name
+    h_pt_rec_noweight[sample.name] = ROOT.TH1F("pt_rec_noweight__"+sample.name, "", 70, 300, 1000)
+    h_pt_rec[sample.name]          = ROOT.TH1F("pt_rec__"+sample.name,          "", 70, 300, 1000)
+    h_pt_gen_noweight[sample.name] = ROOT.TH1F("pt_gen_noweight__"+sample.name, "", 70, 300, 1000)
+    h_pt_gen[sample.name]          = ROOT.TH1F("pt_gen__"+sample.name,          "", 70, 300, 1000)
 
-stack = Stack(mc)
 
-# Use some defaults
-weight_ = lambda event, sample: 1.
-Plot.setDefaults(stack = stack, weight = staticmethod(weight_), selectionString = cutInterpreter.cutString(args.selection))
+    r = sample.treeReader( variables = read_variables, sequence = sequence, selectionString = cutInterpreter.cutString(args.selection) )
+    r.start()
+    eventCount = 0
+    count_threshold = 10000
+    while r.run():
+        event = r.event
+        eventCount+=1
+        if eventCount >= count_threshold:
+            count_threshold += 10000
+            print "Processed", eventCount, "events"
 
-################################################################################
-# Now define the plots
-
-plots = []
-
-plots.append(Plot(
-    name = "jet_rec_pt",
-    texX = 'Jet p_{T} [GeV]', texY = 'Number of Events',
-    attribute = lambda event, sample: event.jet_rec_pt,
-    binning=[40, 0., 2000.],
-))
-
-plotting.fill(plots, read_variables = read_variables, sequence = sequence)
-
-drawPlots(plots)
-
-# Also store plots in root file
-logger.info( "Now write results in root files." )
-plots_root = ["jet_rec_pt"]
+        if event.passed_measurement_gen and event.passed_measurement_rec:
+            h_pt_rec_noweight[sample.name].Fill(event.jet_rec_pt, 1.)
+            h_pt_rec[sample.name].Fill(event.jet_rec_pt, event.rec_weight*event.gen_weight)
+            h_pt_gen_noweight[sample.name].Fill(event.jet_gen_pt, 1.)
+            h_pt_gen[sample.name].Fill(event.jet_gen_pt, event.gen_weight)
+# Now store in root file
 plot_dir = os.path.join(plot_directory, 'analysisPlots', args.plot_directory, args.era, "lin", args.selection)
-if not os.path.exists(plot_dir):
-    try:
-        os.makedirs(plot_dir)
-    except:
-        print 'Could not create', plot_dir
+if not os.path.exists( plot_dir ): os.makedirs( plot_dir )
 outfilename = plot_dir+'/Results.root'
-logger.info("Saving in %s"%outfilename)
 outfile = ROOT.TFile(outfilename, 'recreate')
 outfile.cd()
-for plot in plots:
-    if plot.name in plots_root:
-        for idx, histo_list in enumerate(plot.histos):
-            for j, h in enumerate(histo_list):
-                histname = h.GetName()
-                if "Wjets" in histname: process = "Wjets"
-                elif "SingleTop" in histname: process = "SingleTop"
-                elif "TTbar_1665" in histname: process = "TTbar_1665"
-                elif "TTbar_1695" in histname: process = "TTbar_1695"
-                elif "TTbar_1715" in histname: process = "TTbar_1715"
-                elif "TTbar_1735" in histname: process = "TTbar_1735"
-                elif "TTbar_1755" in histname: process = "TTbar_1755"
-                elif "TTbar_1785" in histname: process = "TTbar_1785"
-                elif "TTbar" in histname: process = "TTbar"
-                elif "data" in histname: process = "data"
-                h.Write(plot.name+"__"+process)
-outfile.Close()
-
-logger.info( "Done with prefix %s and selectionString %s"%(args.selection, cutInterpreter.cutString(args.selection)) )
+for sample in mc:
+    h_pt_rec_noweight[sample.name].Write()
+    h_pt_rec[sample.name].Write()
+    h_pt_gen_noweight[sample.name].Write()
+    h_pt_gen[sample.name].Write()
+outfile.cd()
