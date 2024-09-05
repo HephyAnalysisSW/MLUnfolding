@@ -48,6 +48,7 @@ argParser.add_argument('--era',            action='store', type=str, default="UL
 argParser.add_argument('--shuffle',  action='store', type=str, default="random") # random, false, <Pathfile>
 argParser.add_argument('--split',    action='store', type=str, default="random") # random, false, <Pathfile>
 argParser.add_argument('--max_used_part',    action='store', type=int, default=50) # random, false, <Pathfile>
+argParser.add_argument('--pt_bin',    action='store', type=str, default="std") # random, false, <Pathfile>
 args = argParser.parse_args()
 
 ################################################################################
@@ -62,10 +63,27 @@ logger_rt = logger_rt.get_logger(args.logLevel, logFile = None)
 # from EEEC.samples.nanoTuples_UL_RunII_nanoAOD import *
 from EEEC.samples.nanoTuples_UL_RunII_nanoAOD_onesample import *
 
+save_shuffled = False
+save_unsplit_data = False
+
 mc = [UL2018.TTbar]
 # mc = [UL2018.TTbar_3]
 
 lumi_scale = 60
+
+pt_bins = np.array([400,425,450,475,500,525,550,575,600,1000])
+
+pt_binnames = {
+  1: "400",
+  2: "425",
+  3: "450",
+  4: "475",
+  5: "500",
+  6: "525",
+  7: "550",
+  8: "575",
+  9: "600"
+}
 
 def getZetas(scale, constituents, exponent=2, max_zeta=None, max_delta_zeta=None, delta_legs=None, shortest_side=None, log=False,part_max=50):
     # in pp, zeta = (Delta R)^2 and weight = (pT1*pT2*pT3 / pTjet^3)^exponent
@@ -163,7 +181,7 @@ def getZetas(scale, constituents, exponent=2, max_zeta=None, max_delta_zeta=None
     medium = np.zeros( ( len(c), 1), dtype='f' )
     medium[:,0] = zeta_values[:,1]
 
-    return zeta_values, weight
+    return zeta_values, transformed_values, long, medium, weight
 
 ################################################################################
 # Functions needed specifically for this analysis routine
@@ -300,11 +318,32 @@ def getConstituents( event, sample ):
     event.zeta_rec = np.zeros( ( len([]), 3), dtype='f' )
     event.weight_rec = np.zeros( ( len([]), 1), dtype='f' )
 
-    if len(genParts_matched) > 0:
-        event.zeta_gen, event.weight_gen = getZetas(scale_gen, genParts_matched, exponent=1, max_zeta=None, max_delta_zeta=None, delta_legs=None, shortest_side=None, log=False,part_max=args.max_used_part)
-        event.zeta_rec, event.weight_rec = getZetas(scale_pf,   pfParts_matched, exponent=1, max_zeta=None, max_delta_zeta=None, delta_legs=None, shortest_side=None, log=False,part_max=args.max_used_part)
+    event.zeta_flag = False
+    if len(genParts_matched) > 2:
+        event.zeta_flag = True
+        event.pt_bin    =  np.digitize(scale_gen,pt_bins)
+        
+        _, event.zeta_gen, _, _, event.weight_gen =  getZetas(scale_gen, genParts_matched, exponent=1, max_zeta=None, max_delta_zeta=None, delta_legs=None, shortest_side=None, log=False,part_max=args.max_used_part)
+        _, event.zeta_rec, _, _, event.weight_rec =  getZetas(scale_pf,   pfParts_matched, exponent=1, max_zeta=None, max_delta_zeta=None, delta_legs=None, shortest_side=None, log=False,part_max=args.max_used_part)
+
+        cut_min_shortside = 0.1
+        cut_max_asymm     = (172.5 / scale_gen)**2
+
+        filter_array = np.logical_and( event.zeta_gen[:,2] > cut_min_shortside,  event.zeta_gen[:,1] < cut_max_asymm)
+        
+        event.zeta_gen   = event.zeta_gen[filter_array]
+        event.zeta_rec   = event.zeta_rec[filter_array]
+        event.weight_gen = event.weight_gen[filter_array]
+        event.weight_rec = event.weight_rec[filter_array]
+        
+        event.zeta_gen = event.zeta_gen[:,0]
+        event.zeta_rec = event.zeta_rec[:,0]
+    
+    event.jetpt = scale_gen 
+        
 sequence.append( getConstituents )
 
+cut ="shortsidep1"
 
 ################################################################################
 # Read variables
@@ -338,7 +377,10 @@ histograms = {
     "MatchingEfficiency": ROOT.TH1F("MatchingEfficiency", "MatchingEfficiency", 50, 0, 1.0),
 }
 
-event_array = np.zeros((20000000,4))
+maximum_event_number = 20000000
+event_array = np.zeros((maximum_event_number,4))
+pt = np.zeros(maximum_event_number)
+event_pt_bin = np.zeros(maximum_event_number)
 event_Count = 0
 
 outdir = "/groups/hephy/cms/simon.hablas/www/EEEC/results/"
@@ -349,37 +391,43 @@ for sample in mc:
     array_Count = 0
 
     while r.run():
-        if array_Count >= 20000000 :
+        if array_Count >= maximum_event_number :
             break
         event_Count += 1
         event = r.event
-        if event.passSel:
-        
+        if event.passSel and event.zeta_flag:
             for i in range(len(event.zeta_gen)):
-                if array_Count >= 20000000 :
+                if array_Count >= maximum_event_number :
                     break
                 event_array[array_Count,3] = event.weight_rec[i]
-                event_array[array_Count,2] = event.zeta_rec[i][0]
+                event_array[array_Count,2] = event.zeta_rec[i]
                 event_array[array_Count,1] = event.weight_gen[i]
-                event_array[array_Count,0] = event.zeta_gen[i][0]
-                
+                event_array[array_Count,0] = event.zeta_gen[i]
+                event_pt_bin[array_Count]  = event.pt_bin
+                pt[array_Count]=event.jetpt
                 array_Count+=1
-
-                    
     logger.info( "Done with sample "+sample.name+" and selectionString "+cutInterpreter.cutString(args.selection) )
 
 print(np.shape(event_array)) # 10000000
 event_array = event_array[0:array_Count]
+pt = pt[0:array_Count]
 print(np.shape(event_array)) # 10000000
-data_dir = os.path.join(processing_tmp_directory,"data", args.plot_directory, args.era, args.selection,str(args.max_used_part))
-meta_dir = os.path.join(processing_tmp_directory,"meta", args.plot_directory, args.era, args.selection,str(args.max_used_part))
+data_dir = os.path.join(processing_tmp_directory,"data", args.plot_directory, args.era, args.selection,cut,str(args.max_used_part))
+meta_dir = os.path.join(processing_tmp_directory,"meta", args.plot_directory, args.era, args.selection,cut,str(args.max_used_part))
 if not os.path.exists( data_dir ): os.makedirs( data_dir )
 if not os.path.exists( meta_dir ): os.makedirs( meta_dir )
 print("Now save file to " +data_dir)
 
-with open(data_dir+"/ML_Data.npy", 'wb') as f:
-    np.save(f, event_array)
-    
+for for_bin in range(1,len(binnames):
+
+    for_event_array = event_array[pt == for_bin]
+    binname = binnames[for_bin]
+    print(binname)
+
+if save_unsplit_data == True:
+    with open(data_dir+"/ML_Data.npy", 'wb') as f:
+        np.save(f, event_array)
+        
 #SH:
 data_lenght = np.shape(event_array)[0]
 data_n_cols = np.shape(event_array)[1]
@@ -460,10 +508,13 @@ for i in range(data_lenght) :
         validate[validate_lenght] = data_shuffled[i]
         validate_lenght += 1
         
-#Out-process data_shuffled       
-with open(data_dir+"/ML_Data_shuffled.npy", 'wb') as f0:
-    np.save(f0, data_shuffled) 
-del data_shuffled
+if save_shuffled == True :
+    #Out-process data_shuffled       
+    with open(data_dir+"/ML_Data_shuffled.npy", 'wb') as f0:
+        np.save(f0, data_shuffled) 
+    del data_shuffled
+
+
 
 #Out-process train ing-data 
 train = train[:train_lenght,:]    
@@ -488,3 +539,10 @@ print("Validation Data:" + " (Lenght: "+str(np.shape(validate)[0])+")")
 with open(data_dir+"/ML_Data_validate.npy", 'wb') as f3:
     np.save(f3, validate)
 del validate
+
+#Out-process validate ion-data 
+print("pt Data:" + " (Lenght: "+str(np.shape(pt))+")")
+#print(validate)
+with open(data_dir+"/ML_Data_pt.npy", 'wb') as f4:
+    np.save(f4, pt)
+del pt
