@@ -418,131 +418,43 @@ if not os.path.exists( data_dir ): os.makedirs( data_dir )
 if not os.path.exists( meta_dir ): os.makedirs( meta_dir )
 print("Now save file to " +data_dir)
 
-for for_bin in range(1,len(binnames):
+for for_bin in range(1,len(pt_binnames)) :
 
-    for_event_array = event_array[pt == for_bin]
-    binname = binnames[for_bin]
+    for_event_array = event_array[event_pt_bin == for_bin]
+    for_pt          = pt[event_pt_bin == for_bin]
+    binname         = pt_binnames[for_bin]
     print(binname)
-
-if save_unsplit_data == True:
-    with open(data_dir+"/ML_Data.npy", 'wb') as f:
-        np.save(f, event_array)
-        
-#SH:
-data_lenght = np.shape(event_array)[0]
-data_n_cols = np.shape(event_array)[1]
-
-print("Lenght of loaded array: "+str(data_lenght)+"\n")
-
-#print("Pre shuffle:")
-#print(event_array)  
-
-#SH: Shuffle
-shuffle_order = np.arange(data_lenght)
-data_shuffled = np.zeros_like(event_array)
-
-if args.shuffle == "random" : #Shuffle using random order
-    print("Shuffling randomly ...")
-    np.random.shuffle(shuffle_order) # https://numpy.org/doc/stable/reference/random/generated/numpy.random.shuffle.html
-    with open(meta_dir+"/shuffle.npy", 'wb') as fs: #SH: Save shuffle file
-        np.save(fs, shuffle_order)
-        
-elif args.shuffle == "false" : #Do not Shuffle
-    print("Do not shuffle")
     
-else :                        #Shuffle using file
-    print("Shuffle using file: \"" +args.shuffle+ "\"")
-    try :
-        with open(args.shuffle, "rb") as f:
-            shuffle_order = np.load(f)
-            f.close()
-        assert (np.shape(shuffle_order)[0] == data_lenght), "Shuffle File Size Not Applicable! (" + str(np.shape(shuffle_order)[0]) + " vs " + str(data_lenght)+ ")"
-         
-    except FileNotFoundError :
-        print("Shuffle file \""+ args.shuffle +"\" not found.")
-        exit(1)
+    np.random.shuffle(for_event_array)
+    
+    test     = [for_event_array[i] for i in range(int(for_event_array.shape[0] * 0.2))]
+    validate = [for_event_array[i] for i in range(int(for_event_array.shape[0] * 0.2), int(len(for_event_array) * 0.4))]
+    train    = [for_event_array[i] for i in range(int(for_event_array.shape[0] * 0.4), len(for_event_array))]
 
-for i in range(data_lenght) :
-    data_shuffled[i] = event_array[shuffle_order[i]]
+    #Out-process train ing-data 
+    print("Train Data:" + " (Lenght: "+str(np.shape(train)[0])+")")
+    #print(train)
+    with open(data_dir+"/ptbin"+binname+"_ML_Data_train.npy", 'wb') as f0:
+        np.save(f0, train) 
+    del train
 
-del event_array, shuffle_order
-#print("Post shuffle:")
-#print(data_shuffled)
+    #Out-process test ing-data  
+    print("Test Data:" + " (Lenght: "+str(np.shape(test)[0])+")")
+    #print(test)
+    with open(data_dir+"/ptbin"+binname+"_ML_Data_test.npy", 'wb') as f2:
+        np.save(f2, test) 
+    del test
 
-#SH: Splitting in 3 Parts (60,20,20% statistically, therefore array size is bigger )
-train = np.zeros((int(data_lenght),data_n_cols), dtype=float) 
-test = np.zeros((int(data_lenght/2),data_n_cols), dtype=float)
-validate = np.zeros((int(data_lenght/2),data_n_cols), dtype=float)
+    #Out-process validate ion-data   
+    print("Validation Data:" + " (Lenght: "+str(np.shape(validate)[0])+")")
+    #print(validate)
+    with open(data_dir+"/ptbin"+binname+"_ML_Data_validate.npy", 'wb') as f3:
+        np.save(f3, validate)
+    del validate
 
-#SH: Running Indices
-train_lenght = 0
-test_lenght = 0
-validate_lenght = 0
-
-if args.split == "random" : #Splitting Randomly
-    print("Splitting randomly ...")
-    random_test = np.random.randint(1,11, data_lenght)
-    with open(meta_dir+"/split.npy", 'wb') as fs: #SH: Save shuffle file
-        np.save(fs, random_test)
-else :                        #Shuffle using file
-    print("Splitting using file: \"" +args.split+ "\"...")
-    try :
-        with open(args.split, "rb") as f:
-            random_test = np.load(f)
-            f.close()
-        assert (np.shape(random_test)[0] == data_lenght), "Splitting File Size Not Applicable! (" + str(np.shape(random_test)[0]) + " vs " + str(data_lenght)+ ")"
-         
-    except FileNotFoundError :
-        print("Splitting file \""+ args.split +"\" not found.")
-        exit(1)
-
-for i in range(data_lenght) :
-    rand_test = np.random.randint(1,11)
-    if random_test[i] <= 6 :
-        train[train_lenght] = data_shuffled[i]
-        train_lenght += 1
-    elif random_test[i] >= 9 :
-        test[test_lenght] = data_shuffled[i]
-        test_lenght += 1
-    else :
-        validate[validate_lenght] = data_shuffled[i]
-        validate_lenght += 1
-        
-if save_shuffled == True :
-    #Out-process data_shuffled       
-    with open(data_dir+"/ML_Data_shuffled.npy", 'wb') as f0:
-        np.save(f0, data_shuffled) 
-    del data_shuffled
-
-
-
-#Out-process train ing-data 
-train = train[:train_lenght,:]    
-print("Train Data:" + " (Lenght: "+str(np.shape(train)[0])+")")
-#print(train)
-with open(data_dir+"/ML_Data_train.npy", 'wb') as f0:
-    np.save(f0, train) 
-del train
-
-#Out-process test ing-data 
-test = test[:test_lenght,:]   
-print("Test Data:" + " (Lenght: "+str(np.shape(test)[0])+")")
-#print(test)
-with open(data_dir+"/ML_Data_test.npy", 'wb') as f2:
-    np.save(f2, test) 
-del test
-
-#Out-process validate ion-data 
-validate = validate[:validate_lenght,:]   
-print("Validation Data:" + " (Lenght: "+str(np.shape(validate)[0])+")")
-#print(validate)
-with open(data_dir+"/ML_Data_validate.npy", 'wb') as f3:
-    np.save(f3, validate)
-del validate
-
-#Out-process validate ion-data 
-print("pt Data:" + " (Lenght: "+str(np.shape(pt))+")")
-#print(validate)
-with open(data_dir+"/ML_Data_pt.npy", 'wb') as f4:
-    np.save(f4, pt)
-del pt
+    #Out-process validate ion-data 
+    print("pt Data:" + " (Lenght: "+str(np.shape(for_pt))+")")
+    #print(validate)
+    with open(data_dir+"/ptbin"+binname+"_ML_Data_pt.npy", 'wb') as f4:
+        np.save(f4, for_pt)
+    del for_pt
