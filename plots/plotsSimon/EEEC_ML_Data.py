@@ -48,7 +48,7 @@ argParser.add_argument('--era',            action='store', type=str, default="UL
 argParser.add_argument('--shuffle',  action='store', type=str, default="random") # random, false, <Pathfile>
 argParser.add_argument('--split',    action='store', type=str, default="random") # random, false, <Pathfile>
 argParser.add_argument('--max_used_part',    action='store', type=int, default=50) # random, false, <Pathfile>
-argParser.add_argument('--pt_bin',    action='store', type=str, default="std") # random, false, <Pathfile>
+argParser.add_argument('--pt_bin',    action='store', type=int, default=-1) # random, false, <Pathfile>
 args = argParser.parse_args()
 
 ################################################################################
@@ -72,26 +72,29 @@ mc = [UL2018.TTbar]
 lumi_scale = 60
 
 pt_bins = np.array([400,425,450,475,500,525,550,575,600,1000])
+#pt_bins = np.array([400,1000])
+# pt_binnames = {
+  # 1: "400",
+  # 2: "425",
+  # 3: "450",
+  # 4: "475",
+  # 5: "500",
+  # 6: "525",
+  # 7: "550",
+  # 8: "575",
+  # 9: "600"
+# }
 
-pt_binnames = {
-  1: "400",
-  2: "425",
-  3: "450",
-  4: "475",
-  5: "500",
-  6: "525",
-  7: "550",
-  8: "575",
-  9: "600"
-}
+pt_particle_cut = 5 #GeV
+
+print(str(pt_particle_cut) + " Gev particle cut in use")
+
 
 def getZetas(scale, constituents, exponent=2, max_zeta=None, max_delta_zeta=None, delta_legs=None, shortest_side=None, log=False,part_max=50):
     # in pp, zeta = (Delta R)^2 and weight = (pT1*pT2*pT3 / pTjet^3)^exponent
 
     # transform coordinates to np.array
     constituents         = np.array( [[np.sqrt(c.Px()*c.Px()+c.Py()*c.Py()), c.Eta(), c.Phi(), c.M()]  for c in constituents])
-
-
     
     # keep track of indices
     pt   = 0
@@ -104,7 +107,6 @@ def getZetas(scale, constituents, exponent=2, max_zeta=None, max_delta_zeta=None
     constituents = constituents[0:part_max]
    
     
-
     # make triplet combinations
     #if log:
     #    # if we make a log plot, we cannot have dR=0, so we use the variant without repeting elements
@@ -225,9 +227,6 @@ def getClosestJetIdx(object, event, maxDR, genpf_switch):
             minDR = jet.DeltaR(object)
     return idx_match
 
-
-
-
 ################################################################################
 # Define sequences
 sequence       = []
@@ -262,6 +261,8 @@ def getConstituents( event, sample ):
                                 continue
                             genPart = ROOT.TLorentzVector()
                             genPart.SetPtEtaPhiM(event.GenJetAK8_cons_pt[iGen],event.GenJetAK8_cons_eta[iGen],event.GenJetAK8_cons_phi[iGen],event.GenJetAK8_cons_mass[iGen])
+                            if genPart.Pt() < pt_particle_cut : #SH nur particles mit pt >= 5GeV verwenden
+                                continue                            
                             genPartCharge = 1 if event.GenJetAK8_cons_pdgId[iGen]>0 else -1
                             genParts.append( (genPart, genPartCharge) )
                         for iRec in range(event.nPFJetAK8_cons):
@@ -271,6 +272,8 @@ def getConstituents( event, sample ):
                                 continue
                             pfPart = ROOT.TLorentzVector()
                             pfPart.SetPtEtaPhiM(event.PFJetAK8_cons_pt[iRec],event.PFJetAK8_cons_eta[iRec],event.PFJetAK8_cons_phi[iRec],event.PFJetAK8_cons_mass[iRec])
+                            if pfPart.Pt() < pt_particle_cut :
+                                continue    
                             pfPartCharge = 1 if event.PFJetAK8_cons_pdgId[iRec]>0 else -1
                             pfParts.append( (pfPart, pfPartCharge) )
     event.nGenParts = len(genParts)
@@ -377,7 +380,7 @@ histograms = {
     "MatchingEfficiency": ROOT.TH1F("MatchingEfficiency", "MatchingEfficiency", 50, 0, 1.0),
 }
 
-maximum_event_number = 20000000
+maximum_event_number = 100000000
 event_array = np.zeros((maximum_event_number,4))
 pt = np.zeros(maximum_event_number)
 event_pt_bin = np.zeros(maximum_event_number)
@@ -408,28 +411,49 @@ for sample in mc:
                 array_Count+=1
     logger.info( "Done with sample "+sample.name+" and selectionString "+cutInterpreter.cutString(args.selection) )
 
-print(np.shape(event_array)) # 10000000
+print(np.shape(event_array))
+
 event_array = event_array[0:array_Count]
+event_pt_bin= event_pt_bin[0:array_Count]
 pt = pt[0:array_Count]
-print(np.shape(event_array)) # 10000000
-data_dir = os.path.join(processing_tmp_directory,"data", args.plot_directory, args.era, args.selection,cut,str(args.max_used_part))
-meta_dir = os.path.join(processing_tmp_directory,"meta", args.plot_directory, args.era, args.selection,cut,str(args.max_used_part))
+
+pt = pt[0:array_Count]
+print(np.shape(event_array))
+data_dir = os.path.join(processing_tmp_directory,"data", args.plot_directory, args.era, args.selection,cut,str(args.max_used_part),"ptcut"+str(pt_particle_cut)+"GeV")
+meta_dir = os.path.join(processing_tmp_directory,"meta", args.plot_directory, args.era, args.selection,cut,str(args.max_used_part),"ptcut"+str(pt_particle_cut)+"GeV")
 if not os.path.exists( data_dir ): os.makedirs( data_dir )
 if not os.path.exists( meta_dir ): os.makedirs( meta_dir )
 print("Now save file to " +data_dir)
 
-for for_bin in range(1,len(pt_binnames)) :
+if args.pt_bin in range(1,len(pt_bins)) :
+    for_range = [args.pt_bin]
+else : 
+    for_range = range(1,len(pt_bins))
+
+#SH: With this definition, for_bin is the number of the pt_bin 
+for for_bin in for_range :
+    
+    binname = str(pt_bins[for_bin-1]) + "to" + str(pt_bins[for_bin])
 
     for_event_array = event_array[event_pt_bin == for_bin]
     for_pt          = pt[event_pt_bin == for_bin]
-    binname         = pt_binnames[for_bin]
-    print(binname)
+    #binname         = str(pt_bins[for_bin-1])
+
+    #SH: Test:
+    test = pt_bins[for_bin-1]+1
+    test_result = np.digitize(test,pt_bins)
+    print(str(test)  +" is is bin " + binname +" ("+ str(test_result) +")")
+    
     
     np.random.shuffle(for_event_array)
+ 
+    test_share = 0.0
+    val_share = 0.4
     
-    test     = [for_event_array[i] for i in range(int(for_event_array.shape[0] * 0.2))]
-    validate = [for_event_array[i] for i in range(int(for_event_array.shape[0] * 0.2), int(len(for_event_array) * 0.4))]
-    train    = [for_event_array[i] for i in range(int(for_event_array.shape[0] * 0.4), len(for_event_array))]
+    
+    test     = [for_event_array[i] for i in range(int(for_event_array.shape[0] * test_share))]
+    validate = [for_event_array[i] for i in range(int(for_event_array.shape[0] * test_share), int(len(for_event_array) * (test_share + val_share)))]
+    train    = [for_event_array[i] for i in range(int(for_event_array.shape[0] * (test_share + val_share)), len(for_event_array))]
 
     #Out-process train ing-data 
     print("Train Data:" + " (Lenght: "+str(np.shape(train)[0])+")")
@@ -445,14 +469,14 @@ for for_bin in range(1,len(pt_binnames)) :
         np.save(f2, test) 
     del test
 
-    #Out-process validate ion-data   
+    #Out-process validation-data   
     print("Validation Data:" + " (Lenght: "+str(np.shape(validate)[0])+")")
     #print(validate)
     with open(data_dir+"/ptbin"+binname+"_ML_Data_validate.npy", 'wb') as f3:
         np.save(f3, validate)
     del validate
 
-    #Out-process validate ion-data 
+    #Out-process validation-data 
     print("pt Data:" + " (Lenght: "+str(np.shape(for_pt))+")")
     #print(validate)
     with open(data_dir+"/ptbin"+binname+"_ML_Data_pt.npy", 'wb') as f4:

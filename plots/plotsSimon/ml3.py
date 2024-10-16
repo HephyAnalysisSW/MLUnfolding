@@ -6,8 +6,6 @@ import matplotlib
 matplotlib.use('Agg') # set the backend before importing pyplot
 import matplotlib.pyplot as plt
 import sys
-import gc
-import psutil
 from datetime import datetime
 import os
 #from __future__ import print_function
@@ -56,8 +54,8 @@ table_debug = False#True#False
 try :
     with open(args.train, "rb") as f:
         train_data = np.load(f)
-        if np.shape(train_data)[0] > 10000000 : #SH: 1M 
-            train_data = train_data[0:10000000]
+        if np.shape(train_data)[0] > 1000000 :
+            train_data = train_data[0:1000000]
         f.close()
 except FileNotFoundError :
     print("File \""+ args.train+"\" (Train Data) not found.")
@@ -69,6 +67,9 @@ train_data_n_cols = np.shape(train_data)[1]
 max_values = np.max(train_data, keepdims=True, axis=0)*1.1
 min_values = np.min(train_data, keepdims=True, axis=0)/1.1
 
+print(max_values)
+print(min_values)
+
 transformed_data, mask = trf.normalize_data(train_data, max_values, min_values)
 transformed_data = trf.logit_data(transformed_data)
 mean_values = np.mean(transformed_data, keepdims=True, axis=0)
@@ -78,8 +79,8 @@ transformed_data = trf.standardize_data(transformed_data, mean_values, std_value
 try :
     with open(args.val, "rb") as f:
         val_data = np.load(f)
-        if np.shape(val_data)[0] > 10000000 :
-            val_data = val_data[0:10000000]
+        if np.shape(val_data)[0] > 1000000 :
+            val_data = val_data[0:1000000]
         f.close()
 except FileNotFoundError :
     print("File \""+ args.val+"\" not found.")
@@ -107,7 +108,8 @@ base_dist = StandardNormal(shape=[n_features])
 
 transforms = []
 for i in range(0, n_layers):
-    transforms.append(MaskedAffineAutoregressiveTransform(features=n_features, hidden_features=32, context_features=n_features_con))
+    #transforms.append(MaskedAffineAutoregressiveTransform(features=n_features, hidden_features=32, context_features=n_features_con))
+    transforms.append(MaskedPiecewiseRationalQuadraticAutoregressiveTransform(features=n_features, hidden_features=32, context_features=n_features_con))
     transforms.append(ReversePermutation(features=n_features))
 
 transform = CompositeTransform(transforms)
@@ -120,8 +122,8 @@ optimizer = optim.Adam(flow.parameters(), lr=1e-4)
 
 
 num_epochs = 25
-batch_size =  128# 256
-model_id = 2
+batch_size = 256
+model_id = 3
 
 loss_function_in = []
 loss_function_out=[]
@@ -138,13 +140,9 @@ if args.save_model_path != "NA": # untrained model
     for i in range(num_epochs):
         permut = np.random.permutation(transformed_data.shape[0])
         transformed_data_shuffle = transformed_data[permut]
-        
-        gc.collect() #SH Test Garbage Collection
         if i % 1 == 0: #Only for debugging reasons
             print("")
             print("Epoch "+str(i+1)+"/"+str(num_epochs), end="\t")
-            print(psutil.Process().memory_info().rss / (1024 * 1024))
-            print("")
           
         for i_batch in range(max_batches):
             x = transformed_data_shuffle[i_batch*batch_size:(i_batch+1)*batch_size,0:2]
@@ -154,6 +152,14 @@ if args.save_model_path != "NA": # untrained model
             y = torch.tensor(y, device=device).float()#.view(-1, 1)
             
             optimizer.zero_grad()
+            
+            max_values = torch.max(x, keepdims=True, axis=0)
+            min_values = torch.min(x, keepdims=True, axis=0)
+
+            print(max_values)
+            print(min_values)
+            
+            
             nll = -flow.log_prob(x, context=y) # Feed context
             loss = nll.mean()
 
