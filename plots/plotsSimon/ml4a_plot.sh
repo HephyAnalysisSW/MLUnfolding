@@ -1,0 +1,2 @@
+#!/bin/bash
+python3 ml4a_plot.py --load_model_path="/scratch-cbe/users/simon.hablas/MLUnfolding/models/EEEC_v3/UL2018/nAK82p-AK8pt/shortsidep1/50/all_ptcut2GeV" --plot_dir="/groups/hephy/cms/simon.hablas/www/MLUnfolding/plots/EEEC_v3" --train="/scratch-cbe/users/simon.hablas/MLUnfolding/data/EEEC_v3/UL2018/nAK82p-AK8pt/shortsidep1/50/ptcut5GeV/ML_Data_train.npy" --val="/scratch-cbe/users/simon.hablas/MLUnfolding/data/EEEC_v3/UL2018/nAK82p-AK8pt/shortsidep1/50/ptcut5GeV/ML_Data_validate.npy" --info="Unfolding of Zeta, Weight, pt"
