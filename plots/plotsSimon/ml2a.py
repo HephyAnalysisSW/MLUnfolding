@@ -74,6 +74,8 @@ try :
 except FileNotFoundError :
     print("File "+ args.train+" (Train Data) not found.")
     exit(1)
+    
+print("Train Shape: " + str(train_data.shape))
 
 train_data_lenght = np.shape(train_data)[0]
 train_data_n_cols = np.shape(train_data)[1]

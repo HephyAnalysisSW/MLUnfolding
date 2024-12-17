@@ -250,15 +250,21 @@ for modelname in models:
     step = upper_border // number_of_bins
     n_bins = [x / 100.0 for x in range(0,upper_border+1,step)] 
 
+
+    total_events_hist3 = np.sum(val_data[:, weight_gen_index])
+    total_events_hist5 = np.sum(train_data[:, weight_gen_index])
+    scaling_factor = total_events_hist3 / total_events_hist5
     hist1,_ = np.histogram((retransformed_samples[:,zeta_sample_index] * (retransformed_samples[:,pt_sample_index] ** 2) / 172.5 ** 2), weights= retransformed_samples[:,weight_sample_index] , bins= n_bins)
     hist2,_ = np.histogram((val_data[:,zeta_rec_index] * (val_data[:,pt_rec_index] ** 2)) / 172.5 **2 , weights= val_data[:,weight_rec_index]   , bins= n_bins)
     hist3,_ = np.histogram((val_data[:,zeta_gen_index] * (val_data[:,pt_gen_index] ** 2)) / 172.5 **2 , weights= val_data[:,weight_gen_index]   , bins= n_bins)
     hist4 = np.divide(hist1, hist3, where=hist3!=0)
+    hist5,_ = np.histogram((train_data[:,zeta_gen_index] * (train_data[:,pt_gen_index] ** 2)) / 172.5 **2 , weights= train_data[:,weight_gen_index] * scaling_factor  , bins= n_bins)
     
-    
+
     hep.histplot(hist1,       n_bins, ax=axs[0,2],color = "red",alpha = 0.5,      label = "ML Val Particle Lvl", histtype="fill")
     hep.histplot(hist2,       n_bins, ax=axs[0,2],color = "black",   label = "Val Detector Lvl") 
     hep.histplot(hist3,       n_bins, ax=axs[0,2],color = "#999999", label = "Particle Lvl"    )
+    hep.histplot(hist5,       n_bins, ax=axs[0,2],color = "#0352fc", label = "Train Particle Lvl"    ) # Blue comparison Histogramm
     hep.histplot(hist4, n_bins, ax=axs[1,2],color = "red", alpha = 0.5)
     
     axs[0,0].set_yscale("log")

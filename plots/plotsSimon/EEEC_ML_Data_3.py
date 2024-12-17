@@ -42,7 +42,7 @@ import numpy as np
 import argparse
 argParser = argparse.ArgumentParser(description = "Argument parser")
 argParser.add_argument('--logLevel',       action='store',      default='INFO', nargs='?', choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'TRACE', 'NOTSET'], help="Log level for logging")
-argParser.add_argument('--plot_directory', action='store', default='EEEC_v3')
+argParser.add_argument('--plot_directory', action='store', default='EEEC_v3_with_mass')
 argParser.add_argument('--selection',      action='store', default='nAK82p-AK8pt')
 argParser.add_argument('--era',            action='store', type=str, default="UL2018")
 argParser.add_argument('--shuffle',  action='store', type=str, default="random") # random, false, <Pathfile>
@@ -65,7 +65,7 @@ from EEEC.samples.nanoTuples_UL_RunII_nanoAOD_onesample import *
 save_shuffled = False
 save_unsplit_data = False
 
-mc = [UL2018.TTbar]
+mc = [UL2018.TTbar,UL2018.TTbar_older,UL2018.TTbar_173p5,UL2018.TTbar_171p5 ]
 # mc = [UL2018.TTbar_3]
 
 lumi_scale = 60
@@ -74,6 +74,24 @@ pt_particle_cut = 5 #GeV
 
 print(str(pt_particle_cut) + " Gev particle cut in use")
 
+def get_atoptop_mass(event):
+    # First find the two tops
+    foundTop = False
+    foundATop = False
+    for i in range(event.nGenPart):
+        if foundTop and foundATop:
+            break
+        if event.GenPart_pdgId[i] == 6:
+            top = ROOT.TLorentzVector()
+            top.SetPtEtaPhiM(event.GenPart_pt[i],event.GenPart_eta[i],event.GenPart_phi[i],event.GenPart_m[i])
+            foundTop = True
+        elif event.GenPart_pdgId[i] == -6:
+            atop = ROOT.TLorentzVector()
+            atop.SetPtEtaPhiM(event.GenPart_pt[i],event.GenPart_eta[i],event.GenPart_phi[i],event.GenPart_m[i])
+            foundATop = True
+    # Now search for leptons
+    # if grandmother is the top, the atop is hadronice and vice versa
+    return top.M()+atop.M()
 
 def getZetas(scale, constituents, exponent=2, max_zeta=None, max_delta_zeta=None, delta_legs=None, shortest_side=None, log=False,part_max=50):
     # in pp, zeta = (Delta R)^2 and weight = (pT1*pT2*pT3 / pTjet^3)^exponent
@@ -88,7 +106,7 @@ def getZetas(scale, constituents, exponent=2, max_zeta=None, max_delta_zeta=None
     mass = 3
     
     #Sort by pt
-    constituents = constituents[constituents[:, pt].argsort()[::-1]]
+    constituents = constituents[constituents[:, pt].argsort()[::-1]] # Possbile place to print used actually used particles 
     constituents = constituents[0:part_max]
    
     
@@ -218,7 +236,8 @@ sequence       = []
 
 
 def getConstituents( event, sample ):
-
+    
+    #print("m_T + m_aT =  " + str(get_atoptop_mass(event)))
     passSel = False
     genParts = []
     pfParts = []
@@ -326,8 +345,10 @@ def getConstituents( event, sample ):
         event.zeta_gen = event.zeta_gen[:,0]
         event.zeta_rec = event.zeta_rec[:,0]
         
-        event.pt_rec = scale_gen
-        event.pt_gen = scale_pf
+        event.pt_rec = scale_pf
+        event.pt_gen = scale_gen
+        
+        event.mt_gen = genJet.M()
         
 sequence.append( getConstituents )
 
@@ -365,12 +386,6 @@ histograms = {
     "MatchingEfficiency": ROOT.TH1F("MatchingEfficiency", "MatchingEfficiency", 50, 0, 1.0),
 }
 
-maximum_event_number = 100000000
-event_array = np.zeros((maximum_event_number,6))
-pt = np.zeros(maximum_event_number)
-event_pt_bin = np.zeros(maximum_event_number)
-event_Count = 0
-
 #SH To Avoid Index Confusion
 zeta_gen_index = 0
 zeta_rec_index = 1
@@ -378,11 +393,23 @@ weight_gen_index = 2
 weight_rec_index = 3
 pt_gen_index = 4
 pt_rec_index = 5
+mass_gen_index= 6
 
 
 outdir = "/groups/hephy/cms/simon.hablas/www/EEEC/results/"
+
+print("Samples")
+print(mc)
+
 for sample in mc:
+    print()
+    print("Starting with sample "+sample.name)
     
+    maximum_event_number = 100000000
+    event_array = np.zeros((maximum_event_number,7))
+    event_pt_bin = np.zeros(maximum_event_number)
+    event_Count = 0
+
     r = sample.treeReader( variables = read_variables, sequence = sequence, selectionString = cutInterpreter.cutString(args.selection))
     r.start()
     array_Count = 0
@@ -402,50 +429,49 @@ for sample in mc:
                 event_array[array_Count,zeta_rec_index] =    event.zeta_rec[i] * event.pt_rec**2 / 172.5**2
                 event_array[array_Count,weight_gen_index] =  event.weight_gen[i]
                 event_array[array_Count,zeta_gen_index] =    event.zeta_gen[i] * event.pt_gen**2 / 172.5**2
+                event_array[array_Count,mass_gen_index] =    event.mt_gen
                 array_Count+=1
     logger.info( "Done with sample "+sample.name+" and selectionString "+cutInterpreter.cutString(args.selection) )
+    #For Loop End
 
-print(np.shape(event_array))
+    print(np.shape(event_array))
 
-event_array = event_array[0:array_Count]
-pt = pt[0:array_Count]
+    event_array = event_array[0:array_Count]
+    print(np.shape(event_array))
+    data_dir = os.path.join(processing_tmp_directory,"data", args.plot_directory, args.era, args.selection,cut,str(args.max_used_part),"ptcut"+str(pt_particle_cut)+"GeV",sample.name)
+    if not os.path.exists( data_dir ): os.makedirs( data_dir )
+    print("Now save file to " +data_dir)
 
-pt = pt[0:array_Count]
-print(np.shape(event_array))
-data_dir = os.path.join(processing_tmp_directory,"data", args.plot_directory, args.era, args.selection,cut,str(args.max_used_part),"ptcut"+str(pt_particle_cut)+"GeV")
-meta_dir = os.path.join(processing_tmp_directory,"meta", args.plot_directory, args.era, args.selection,cut,str(args.max_used_part),"ptcut"+str(pt_particle_cut)+"GeV")
-if not os.path.exists( data_dir ): os.makedirs( data_dir )
-if not os.path.exists( meta_dir ): os.makedirs( meta_dir )
-print("Now save file to " +data_dir)
+    #SH: Shuffle 
+    np.random.shuffle(event_array)
 
-#SH: Shuffle 
-np.random.shuffle(event_array)
+    test_share = 0.0
+    val_share = 0.4
 
-test_share = 0.0
-val_share = 0.4
+    #SH :Split
+    test     = [event_array[i] for i in range(int(event_array.shape[0] * test_share))]
+    validate = [event_array[i] for i in range(int(event_array.shape[0] * test_share), int(len(event_array) * (test_share + val_share)))]
+    train    = [event_array[i] for i in range(int(event_array.shape[0] * (test_share + val_share)), len(event_array))]
 
-#SH :Split
-test     = [event_array[i] for i in range(int(event_array.shape[0] * test_share))]
-validate = [event_array[i] for i in range(int(event_array.shape[0] * test_share), int(len(event_array) * (test_share + val_share)))]
-train    = [event_array[i] for i in range(int(event_array.shape[0] * (test_share + val_share)), len(event_array))]
+    #Out-process train ing-data 
+    print("Train Data:" + " (Lenght: "+str(np.shape(train)[0])+")")
+    #print(train)
+    with open(data_dir+"/ML_Data_train.npy", 'wb') as f0:
+        np.save(f0, train) 
+    del train
 
-#Out-process train ing-data 
-print("Train Data:" + " (Lenght: "+str(np.shape(train)[0])+")")
-#print(train)
-with open(data_dir+"/ML_Data_train.npy", 'wb') as f0:
-    np.save(f0, train) 
-del train
+    #Out-process test ing-data  
+    print("Test Data:" + " (Lenght: "+str(np.shape(test)[0])+")")
+    #print(test)
+    with open(data_dir+"/ML_Data_test.npy", 'wb') as f2:
+        np.save(f2, test) 
+    del test
 
-#Out-process test ing-data  
-print("Test Data:" + " (Lenght: "+str(np.shape(test)[0])+")")
-#print(test)
-with open(data_dir+"/ML_Data_test.npy", 'wb') as f2:
-    np.save(f2, test) 
-del test
-
-#Out-process validation-data   
-print("Validation Data:" + " (Lenght: "+str(np.shape(validate)[0])+")")
-#print(validate)
-with open(data_dir+"/ML_Data_validate.npy", 'wb') as f3:
-    np.save(f3, validate)
-del validate
+    #Out-process validation-data   
+    print("Validation Data:" + " (Lenght: "+str(np.shape(validate)[0])+")")
+    #print(validate)
+    with open(data_dir+"/ML_Data_validate.npy", 'wb') as f3:
+        np.save(f3, validate)
+    del validate
+    
+    print("End Sample" + sample.name + " | Printed to: " + data_dir)

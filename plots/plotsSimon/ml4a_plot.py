@@ -25,6 +25,7 @@ argParser.add_argument('--save_model_path',    action='store', type=str, default
 argParser.add_argument('--load_model_path',    action='store', type=str, default="NA")
 argParser.add_argument('--info',    action='store', type=str, default="NA") 
 argParser.add_argument('--text_debug',    action='store', type=bool, default=True) 
+argParser.add_argument('--weight_cut', action='store', type=float, default=0.0) # ./mldata/ML_Data_validate.npy
 
 args = argParser.parse_args()
 
@@ -81,10 +82,9 @@ sample_index = [zeta_sample_index,weight_sample_index,pt_sample_index]
 
 try :
     with open(args.train, "rb") as f:
-        train_data = np.load(f)
-        
-        train_data = train_data[0:1000000]
-        
+        train_data_uncut = np.load(f)
+        train_data = train_data_uncut[0:1000000]
+        train_data = train_data[train_data[:, weight_gen_index] > w_cut] #SH: Apply cut for weight
         f.close()
 except FileNotFoundError :
     print("File \""+ args.train+"\" (Train Data) not found.")
@@ -117,8 +117,9 @@ print("\nSampling now:")
 #SH: Redundant Exception Handling. Works though
 try :
     with open(args.val, "rb") as f:
-        val_data = np.load(f)
-        val_data = val_data[0:1000000]
+        val_data_uncut = np.load(f)
+        val_data = val_data[val_data[:, weight_gen_index] > w_cut] #SH: Apply cut for weight
+        val_data = val_data_uncut[0:1000000]
         f.close()
 except FileNotFoundError :
     print("File \""+ args.val+"\" not found.")
@@ -149,7 +150,7 @@ x_val = torch.tensor(x_val, device=device).float()
 y_val = val_transformed_data[:,rec_index]
 y_val = torch.tensor(y_val, device=device).float()
 
-#models = models[-2:-1]
+#models = models[-1:]
 
 for modelname in models:
     modelpath = args.load_model_path + "/"+ modelname
@@ -205,12 +206,16 @@ for modelname in models:
         
         #SH: Filter pt bin (pt_gen)
         if ptbin == pt_bins[n_pt_bins-1] : #SH: Funny Filter
-            filter_array = val_data[:,pt_gen_index] >= ptbin
+            filter_array_val = val_data[:,pt_gen_index] >= ptbin
+            filter_array_train = train_data[:,pt_gen_index] >= ptbin
         else : 
-            filter_array = (val_data[:,pt_gen_index] >= ptbin) & (val_data[:,pt_gen_index] < pt_bins[i+1])
+            filter_array_val = (val_data[:,pt_gen_index] >= ptbin) & (val_data[:,pt_gen_index] < pt_bins[i+1])
+            filter_array_train = (train_data[:,pt_gen_index] >= ptbin) & (train_data[:,pt_gen_index] < pt_bins[i+1])
             
-        plot_samples = retransformed_samples[filter_array]
-        plot_val_data= val_data[filter_array]
+        plot_samples = retransformed_samples[filter_array_val]
+        plot_val_data= val_data[filter_array_val]
+        plot_train_data = train_data[filter_array_train]
+        
 
         fig, axs =  plt.subplots(2, 3, sharex = "col", tight_layout=True,figsize=(15, 6), gridspec_kw=
                                         dict(height_ratios=[6, 1],
@@ -223,9 +228,9 @@ for modelname in models:
 
 
         if args.info == "NA" :
-            fig.suptitle("Epoch: "+modelname)
+            fig.suptitle("pt-bin: "+str(ptbin)+" | Epoch: "+modelname)
         else :
-            fig.suptitle(args.info + " | Epoch: "+modelname)
+            fig.suptitle("pt-bin: "+str(ptbin) + " | " +args.info + " | Epoch: "+modelname)
         number_of_bins = 20
 
         upper_border = 7
@@ -263,15 +268,21 @@ for modelname in models:
         step = upper_border // number_of_bins
         n_bins = [x / 100.0 for x in range(0,upper_border+1,step)] 
 
+        total_events_hist3 = np.sum(plot_val_data[:, weight_gen_index])
+        total_events_hist5 = np.sum(plot_train_data[:, weight_gen_index])
+        scaling_factor = total_events_hist3 / total_events_hist5
+
         hist1,_ = np.histogram(plot_samples[:,zeta_sample_index], weights= plot_samples[:,weight_sample_index], bins= n_bins)
         hist2,_ = np.histogram(plot_val_data[:,zeta_rec_index],    weights= plot_val_data[:,weight_rec_index]             , bins= n_bins)
         hist3,_ = np.histogram(plot_val_data[:,zeta_gen_index],    weights= plot_val_data[:,weight_gen_index]           , bins= n_bins)
         hist4 = np.divide(hist1, hist3, where=hist3!=0)
-        
+        hist5,_ = np.histogram(plot_train_data[:,zeta_gen_index], weights= plot_train_data[:,weight_gen_index] * scaling_factor  , bins= n_bins)
+    
         hep.histplot(hist1,       n_bins, ax=axs[0,2],color = "red",alpha = 0.5,      label = "Val Particle Lvl", histtype="fill")
         hep.histplot(hist2,       n_bins, ax=axs[0,2],color = "black",   label = "Val Detector Lvl") 
         hep.histplot(hist3,       n_bins, ax=axs[0,2],color = "#999999", label = "Particle Lvl"    )
         hep.histplot(hist4, n_bins, ax=axs[1,2],color = "red", alpha = 0.5)
+        hep.histplot(hist5,       n_bins, ax=axs[0,2],color = "#0352fc", label = "Train Particle Lvl"    ) # Blue comparison Histogramm
         
         axs[0,0].set_yscale("log")
         axs[0,1].set_yscale("log")

@@ -126,9 +126,9 @@ hist1 = hist1 * factor_172
 hist2 = hist2 * factor_171
 hist3 = hist3 * factor_173
 
-hep.histplot(hist1,       n_bins, ax=axs[0],color = "red",alpha = 0.5, label = "m_t = 172.5GeV (alt)", histtype="fill")
-hep.histplot(hist2,       n_bins, ax=axs[0],color = "black",           label = "m_t = 171.5GeV") 
-hep.histplot(hist3,       n_bins, ax=axs[0],color = "#999999",         label = "m_t = 173.5GeV"    )
+hep.histplot(hist1,       n_bins, ax=axs[0],color = "grey",alpha = 0.5, label = "m_t = 172.5GeV (alt)", histtype="fill")
+hep.histplot(hist2,       n_bins, ax=axs[0],color = "blue",           label = "m_t = 171.5GeV") 
+hep.histplot(hist3,       n_bins, ax=axs[0],color = "yellow",         label = "m_t = 173.5GeV"    )
 
 #axs[0].set_yscale("log")
 axs[0].legend(frameon = False, fontsize="18")
@@ -153,9 +153,9 @@ hist1 = hist1 * factor_172
 hist2 = hist2 * factor_171
 hist3 = hist3 * factor_173
 
-hep.histplot(hist1,       n_bins, ax=axs[1],color = "red",alpha = 0.5, label = "m_t = 172.5GeV (alt)", histtype="fill")
-hep.histplot(hist2,       n_bins, ax=axs[1],color = "black",           label = "m_t = 171.5GeV") 
-hep.histplot(hist3,       n_bins, ax=axs[1],color = "#999999",         label = "m_t = 173.5GeV"    )
+hep.histplot(hist1,       n_bins, ax=axs[1],color = "grey",alpha = 0.5, label = "m_t = 172.5GeV (alt)", histtype="fill")
+hep.histplot(hist2,       n_bins, ax=axs[1],color = "blue",           label = "m_t = 171.5GeV") 
+hep.histplot(hist3,       n_bins, ax=axs[1],color = "yellow",         label = "m_t = 173.5GeV"    )
 
 #axs[1].set_yscale("log")
 axs[1].legend(frameon = False, fontsize="18")
@@ -180,9 +180,9 @@ hist1 = hist1 * sum_factor_172
 hist2 = hist2 * sum_factor_171
 hist3 = hist3 * sum_factor_173
 
-hep.histplot(hist1,       n_bins, ax=axs[2],color = "red",alpha = 0.5, label = "m_t = 172.5GeV (alt)", histtype="fill")
-hep.histplot(hist2,       n_bins, ax=axs[2],color = "black",           label = "m_t = 171.5GeV") 
-hep.histplot(hist3,       n_bins, ax=axs[2],color = "#999999",         label = "m_t = 173.5GeV"    )
+hep.histplot(hist1,       n_bins, ax=axs[2],color = "grey",alpha = 0.5, label = "m_t = 172.5GeV (alt)", histtype="fill")
+hep.histplot(hist2,       n_bins, ax=axs[2],color = "blue",           label = "m_t = 171.5GeV") 
+hep.histplot(hist3,       n_bins, ax=axs[2],color = "yellow",         label = "m_t = 173.5GeV"    )
 
 #axs[2].set_yscale("log")
 axs[2].legend(frameon = False, fontsize="18")

@@ -18,22 +18,6 @@ import gc
 from MLUnfolding.Tools.user  import plot_directory
 #plot_directory = "./plots"
 
-# Function to calculate sum of squared weights for each bin
-def calc_squared_weights(data, weights, bins):
-    squared_weights = np.square(weights)
-    hist_squared, _ = np.histogram(data, bins=bins, weights=squared_weights)
-    return hist_squared
-
-def calculate_chisq(hist1, hist2, hist_squared1):
-    # Create a mask to exclude rows where hist_squared1 is 0
-    valid_mask = hist_squared1 != 0
-    # Apply the mask to the arrays
-    chi_squared = np.sum(
-        np.square(hist1[valid_mask] - hist2[valid_mask]) / hist_squared1[valid_mask]
-    )
-    return chi_squared
-
-
 import argparse
 argParser = argparse.ArgumentParser(description = "Argument parser")
 argParser.add_argument('--logLevel', action='store',      default='INFO', nargs='?', choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'TRACE', 'NOTSET'], help="Log level for logging")
@@ -128,14 +112,11 @@ if table_debug == True :
     print(train_data)
 
 ## transform data and save max, min, mean, std values for the backtransformation later
-max_values = np.max(train_data, keepdims=True, axis=0)*1.1
-min_values = np.min(train_data, keepdims=True, axis=0)/1.1
+max_values = np.max(train_data, keepdims=True, axis=0) * 1.1
+min_values = np.min(train_data, keepdims=True, axis=0) * 1.1
 
 transformed_data, mask = trf.normalize_data(train_data, max_values, min_values)
-transformed_data = trf.logit_data(transformed_data)
-mean_values = np.mean(transformed_data, keepdims=True, axis=0)
-std_values = np.std(transformed_data, keepdims=True, axis=0)
-transformed_data = trf.standardize_data(transformed_data, mean_values, std_values)
+
 
 print("\nSampling now:")
 
@@ -152,10 +133,11 @@ except FileNotFoundError :
     exit(1)
  
 val_transformed_data, mask = trf.normalize_data(val_data, max_values, min_values)
-val_transformed_data = trf.logit_data(val_transformed_data)
-val_transformed_data = trf.standardize_data(val_transformed_data, mean_values, std_values)
+#val_transformed_data = trf.logit_data(val_transformed_data)
+#val_transformed_data = trf.standardize_data(val_transformed_data, mean_values, std_values)
 val_trans_cond = torch.tensor(val_transformed_data[:,rec_index], device=device).float()
 val_data = val_data[mask]
+
 
 print(val_trans_cond.shape)
 
@@ -177,7 +159,7 @@ x_val = torch.tensor(x_val, device=device).float()
 y_val = val_transformed_data[:,rec_index]
 y_val = torch.tensor(y_val, device=device).float()
 
-#models = models[-1:]
+models = models[-1:]
 
 print(models)
 
@@ -207,11 +189,12 @@ for modelname in models:
     with torch.no_grad():
       samples = flow.sample(1, context=val_trans_cond).view(val_trans_cond.shape[0], -1).cpu().numpy()
     ## inverse standardize
-    retransformed_samples = trf.standardize_inverse(samples, mean_values[:,gen_index], std_values[:,gen_index])
+    #retransformed_samples = trf.standardize_inverse(samples, mean_values[:,gen_index], std_values[:,gen_index])
     ## inverse logit
-    retransformed_samples = trf.logit_inverse(retransformed_samples)
+    #retransformed_samples = trf.logit_inverse(retransformed_samples)
     ## inverse normalize
-    retransformed_samples = trf.normalize_inverse(retransformed_samples, max_values[:,gen_index], min_values[:,gen_index]) 
+    #retransformed_samples = trf.normalize_inverse(retransformed_samples, max_values[:,gen_index], min_values[:,gen_index]) 
+    retransformed_samples = trf.normalize_inverse(samples, max_values[:,gen_index], min_values[:,gen_index]) 
 
 
     if text_debug :
@@ -228,8 +211,6 @@ for modelname in models:
     modelname = modelname.replace("m2f3e", "")
     modelname = modelname.zfill(2)
     
-    #print("Careful!! Filter in Action")
-    #retransformed_samples = retransformed_samples[retransformed_samples[:,weight_sample_index] < 0.0001]
 
     fig, axs =  plt.subplots(2, 3, sharex = "col", tight_layout=True,figsize=(15, 6), gridspec_kw=
                                     dict(height_ratios=[6, 1],
@@ -249,7 +230,7 @@ for modelname in models:
     step = upper_border // number_of_bins
     n_bins = [x / 100.0 for x in range(0,upper_border+1,step)] 
     
-    hist1,bin_edges = np.histogram(retransformed_samples[:,zeta_sample_index], bins= n_bins)
+    hist1,_ = np.histogram(retransformed_samples[:,zeta_sample_index], bins= n_bins)
     hist2,_ = np.histogram(val_data[:,zeta_rec_index]    ,bins= n_bins)
     hist3,_ = np.histogram(val_data[:,zeta_gen_index] ,bins= n_bins)
     hist4 = np.divide(hist1, hist3, where=hist3!=0)
@@ -259,19 +240,9 @@ for modelname in models:
     hep.histplot(hist3,       n_bins, ax=axs[0,0],color = "#999999", label = "Particle Lvl"    )
     hep.histplot(hist4, n_bins, ax=axs[1,0],color = "red", alpha = 0.5)   
     
-    upper_border = 1000 #300
+    upper_border = 300
     step = upper_border // number_of_bins
     n_bins = [x / 10000000.0 for x in range(0,upper_border+1,step)]
-    
-    
-    target_bin_index = 10
-    bin_min = bin_edges[target_bin_index]
-    bin_max = bin_edges[target_bin_index + 1]
-    
-    selected_samples = retransformed_samples[
-    (retransformed_samples[:, zeta_sample_index] >= bin_min) &
-    (retransformed_samples[:, zeta_sample_index] < bin_max)]   
-    selected_samples = retransformed_samples 
     
     hist1,_ = np.histogram(retransformed_samples[:,weight_sample_index], bins= n_bins)
     hist2,_ = np.histogram(val_data[:,weight_rec_index]    ,bins= n_bins)
@@ -292,7 +263,7 @@ for modelname in models:
     total_events_hist3 = np.sum(val_data[:, weight_gen_index])
     total_events_hist5 = np.sum(train_data[:, weight_gen_index])
     scaling_factor = total_events_hist3 / total_events_hist5
-    hist1, bin_edges = np.histogram(selected_samples[:,zeta_sample_index] , weights= selected_samples[:,weight_sample_index] , bins= n_bins)
+    hist1,_ = np.histogram(retransformed_samples[:,zeta_sample_index] , weights= retransformed_samples[:,weight_sample_index] , bins= n_bins)
     hist2,_ = np.histogram(val_data[:,zeta_rec_index]  , weights= val_data[:,weight_rec_index]   , bins= n_bins)
     hist3,_ = np.histogram(val_data[:,zeta_gen_index]  , weights= val_data[:,weight_gen_index]   , bins= n_bins)
     hist4 = np.divide(hist1, hist3, where=hist3!=0)
@@ -304,13 +275,6 @@ for modelname in models:
     hep.histplot(hist3,       n_bins, ax=axs[0,2],color = "#999999", label = "Particle Lvl"    ) # grau
     hep.histplot(hist5,       n_bins, ax=axs[0,2],color = "#0352fc", label = "Train Particle Lvl"    ) # Blue comparison Histogramm
     hep.histplot(hist4, n_bins, ax=axs[1,2],color = "red", alpha = 0.5)
-    
-    
-
-    weight_squared = calc_squared_weights(selected_samples[:,zeta_sample_index] , weights= selected_samples[:,weight_sample_index] , bins= n_bins)
-    chi2 = calculate_chisq(hist1,hist3,weight_squared)
-    
-    print("Chi^2: " + str(round(chi2,3)))
     
     axs[0,0].set_yscale("log")
     axs[0,1].set_yscale("log")
@@ -342,11 +306,9 @@ for modelname in models:
     axs[0,0].set_ylim([1, 1e5])
     axs[0,1].set_ylim([1e3, 1e5])
     axs[0,0].set_xlim([0, 7])
-    axs[0,1].set_xlim([0, 0.0001])
-    #axs[0,1].set_xlim([0, 0.00003])
+    axs[0,1].set_xlim([0, 0.00003])
     axs[0,2].set_xlim([0, 7])
-  
-
+   
     
     #axs[0,1].xaxis.set(minor_locator=ticker.MultipleLocator(25))
     #axs[0,1].yaxis.set(minor_locator=ticker.MultipleLocator(1000))
@@ -359,23 +321,23 @@ for modelname in models:
     #ax0.yaxis.set(minor_locator=ticker.MultipleLocator(1000))
     #ax0.xaxis.set(minor_locator=ticker.MultipleLocator(10))
     
-    
-    
     plt.savefig(plot_dir+"/generated_data_"+modelname+".png")
     plt.close("all")
     
+    share_dir = "/scratch-cbe/users/simon.hablas/MLUnfolding/share_dennis"
     
-    if False:
-        share_dir = "/scratch-cbe/users/simon.hablas/MLUnfolding/share_dennis"
-        print("Shard Files to " + share_dir)
-        with open(share_dir+"/val.npy", 'wb') as f0:
-            np.save(f0, val_data ) 
-            
-        with open(share_dir+"/train.npy", 'wb') as f0:
-            np.save(f0, train_data ) 
+    with open(share_dir+"/val.npy", 'wb') as f0:
+        np.save(f0, val_data ) 
         
-        with open(share_dir+"/ML_Sampled_from_val.npy", 'wb') as f0:
-            np.save(f0, retransformed_samples ) 
+    with open(share_dir+"/train.npy", 'wb') as f0:
+        np.save(f0, train_data ) 
+    
+    with open(share_dir+"/ML_Sampled_from_val.npy", 'wb') as f0:
+        np.save(f0, retransformed_samples ) 
+            
+    
+    
+    
     
 it=[*range(len(loss_function_in))]
 
