@@ -141,7 +141,7 @@ optimizer = optim.Adam(flow.parameters(), lr=1e-4)
 ## Training
 
 
-num_epochs = 25
+num_epochs = 100
 batch_size =  128# 256
 model_id = 6
 

@@ -56,7 +56,7 @@ print("Hi")
 w_cut = args.weight_cut
 text_debug= args.text_debug
 
-plot_dir = os.path.join(plot_directory, args.plot_dir,"weight_cut_" + str(w_cut).replace('.', 'p'),"stack")# Zusammenpasten von plot_dir
+plot_dir = os.path.join(plot_directory, args.plot_dir,"weight_cut_" + str(w_cut).replace('.', 'p'),"stack_without_sample_cut")# Zusammenpasten von plot_dir
 if not os.path.exists( plot_dir ): os.makedirs( plot_dir )
 
 
@@ -143,8 +143,9 @@ print("\nSampling now:")
 try :
     with open(args.val, "rb") as f:
         val_data_uncut = np.load(f)
-        val_data = val_data_uncut[0:1000000]
-        val_data = val_data[val_data[:, weight_gen_index] > w_cut] #SH: Apply cut for weight
+        val_data_plot = val_data_uncut[0:1000000]
+        val_data = val_data_plot#[val_data_plot[:, weight_gen_index] > w_cut] #SH: Apply cut for weight
+
         f.close()
         
 except FileNotFoundError :
@@ -177,7 +178,8 @@ x_val = torch.tensor(x_val, device=device).float()
 y_val = val_transformed_data[:,rec_index]
 y_val = torch.tensor(y_val, device=device).float()
 
-#models = models[-1:]
+#models = models[-10:] # only use last 10 models
+#models = models[-1:] # only use last model
 
 print(models)
 
@@ -228,9 +230,6 @@ for modelname in models:
     modelname = modelname.replace("m2f3e", "")
     modelname = modelname.zfill(2)
     
-    #print("Careful!! Filter in Action")
-    #retransformed_samples = retransformed_samples[retransformed_samples[:,weight_sample_index] < 0.0001]
-
     fig, axs =  plt.subplots(2, 3, sharex = "col", tight_layout=True,figsize=(15, 6), gridspec_kw=
                                     dict(height_ratios=[6, 1],
                                           width_ratios=[1, 1, 1]))
@@ -263,7 +262,7 @@ for modelname in models:
     step = upper_border // number_of_bins
     n_bins = [x / 10000000.0 for x in range(0,upper_border+1,step)]
     
-    
+    #SH: To choose a single bin
     target_bin_index = 10
     bin_min = bin_edges[target_bin_index]
     bin_max = bin_edges[target_bin_index + 1]
@@ -291,18 +290,23 @@ for modelname in models:
 
     total_events_hist3 = np.sum(val_data[:, weight_gen_index])
     total_events_hist5 = np.sum(train_data[:, weight_gen_index])
+    total_events_hist6 = np.sum(val_data_plot[:, weight_gen_index])
     scaling_factor = total_events_hist3 / total_events_hist5
+    scaling_factor_val_plot = total_events_hist3 / total_events_hist6
+    
     hist1, bin_edges = np.histogram(selected_samples[:,zeta_sample_index] , weights= selected_samples[:,weight_sample_index] , bins= n_bins)
     hist2,_ = np.histogram(val_data[:,zeta_rec_index]  , weights= val_data[:,weight_rec_index]   , bins= n_bins)
     hist3,_ = np.histogram(val_data[:,zeta_gen_index]  , weights= val_data[:,weight_gen_index]   , bins= n_bins)
     hist4 = np.divide(hist1, hist3, where=hist3!=0)
     hist5,_ = np.histogram(train_data[:,zeta_gen_index] , weights= train_data[:,weight_gen_index] * scaling_factor  , bins= n_bins)
+    hist6,_ = np.histogram(val_data_plot[:,zeta_gen_index]  , weights= val_data_plot[:,weight_gen_index] * scaling_factor_val_plot   , bins= n_bins)
     
     
     hep.histplot(hist1,       n_bins, ax=axs[0,2],color = "red",alpha = 0.5,      label = "ML Val Particle Lvl", histtype="fill")
     hep.histplot(hist2,       n_bins, ax=axs[0,2],color = "black",   label = "Val Detector Lvl") 
     hep.histplot(hist3,       n_bins, ax=axs[0,2],color = "#999999", label = "Particle Lvl"    ) # grau
-    hep.histplot(hist5,       n_bins, ax=axs[0,2],color = "#0352fc", label = "Train Particle Lvl"    ) # Blue comparison Histogramm
+    #hep.histplot(hist5,       n_bins, ax=axs[0,2],color = "#0352fc", label = "Train Particle Lvl"    ) # Blue comparison Histogramm
+    hep.histplot(hist6,       n_bins, ax=axs[0,2],color = "green",alpha = 0.7, label = "Val Particle Lvl wo Filter") # Green comparison Histogramm
     hep.histplot(hist4, n_bins, ax=axs[1,2],color = "red", alpha = 0.5)
     
     
@@ -366,10 +370,10 @@ for modelname in models:
     
     
     if False:
-        share_dir = "/scratch-cbe/users/simon.hablas/MLUnfolding/share_dennis"
+        share_dir = plot_dir # "/scratch-cbe/users/simon.hablas/MLUnfolding/share_dennis"
         print("Shard Files to " + share_dir)
-        with open(share_dir+"/val.npy", 'wb') as f0:
-            np.save(f0, val_data ) 
+        #with open(share_dir+"/val.npy", 'wb') as f0:
+            #np.save(f0, val_data ) 
             
         with open(share_dir+"/train.npy", 'wb') as f0:
             np.save(f0, train_data ) 
