@@ -129,13 +129,13 @@ base_dist = StandardNormal(shape=[n_features])
 
 transforms = []
 for i in range(0, n_layers):
-    transforms.append(MaskedAffineAutoregressiveTransform(features=n_features, hidden_features=128, context_features=n_features_con))
+    transforms.append(MaskedAffineAutoregressiveTransform(features=n_features, hidden_features=32, context_features=n_features_con))
     transforms.append(ReversePermutation(features=n_features))
 
 transform = CompositeTransform(transforms)
 
 flow = Flow(transform, base_dist).to(device)
-optimizer = optim.Adam(flow.parameters(), lr=learning_rate) # 1e-5, 1e-5
+optimizer = optim.Adam(flow.parameters(), lr=1e-4) # 1e-5, 1e-5
 
 ## --<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>--
 ## Training
@@ -158,6 +158,20 @@ if args.save_model_path != "NA": # untrained model
     print("")
     print("Training ongoing:")
     for i in range(num_epochs):
+        if  i == 50 :
+            print("Changed Learning Rate to 1e-5")
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = 1e-5
+        if  i == 100 :
+            print("Changed Learning Rate to 3e-6")
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = 3e-6
+        if  i == 150 :
+            print("Changed Learning Rate to 1e-6")
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = 1e-6
+        
+            
         permut = np.random.permutation(transformed_data.shape[0])
         transformed_data_shuffle = transformed_data[permut]
         

@@ -42,7 +42,7 @@ import numpy as np
 import argparse
 argParser = argparse.ArgumentParser(description = "Argument parser")
 argParser.add_argument('--logLevel',       action='store',      default='INFO', nargs='?', choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'TRACE', 'NOTSET'], help="Log level for logging")
-argParser.add_argument('--plot_directory', action='store', default='EEEC_v3_with_mass')
+argParser.add_argument('--plot_directory', action='store', default='EEEC_v4')
 argParser.add_argument('--selection',      action='store', default='nAK82p-AK8pt')
 argParser.add_argument('--era',            action='store', type=str, default="UL2018")
 argParser.add_argument('--shuffle',  action='store', type=str, default="random") # random, false, <Pathfile>
@@ -348,7 +348,8 @@ def getConstituents( event, sample ):
         event.pt_rec = scale_pf
         event.pt_gen = scale_gen
         
-        event.mt_gen = genJet.M()
+        event.mt_gen      = hadTop.M()
+        event.jetmass_rec = genJet.M()
         
 sequence.append( getConstituents )
 
@@ -394,6 +395,7 @@ weight_rec_index = 3
 pt_gen_index = 4
 pt_rec_index = 5
 mass_gen_index= 6
+mass_jet_gen_index= 7
 
 
 outdir = "/groups/hephy/cms/simon.hablas/www/EEEC/results/"
@@ -406,7 +408,7 @@ for sample in mc:
     print("Starting with sample "+sample.name)
     
     maximum_event_number = 100000000
-    event_array = np.zeros((maximum_event_number,7))
+    event_array = np.zeros((maximum_event_number,8))
     event_pt_bin = np.zeros(maximum_event_number)
     event_Count = 0
 
@@ -430,6 +432,7 @@ for sample in mc:
                 event_array[array_Count,weight_gen_index] =  event.weight_gen[i]
                 event_array[array_Count,zeta_gen_index] =    event.zeta_gen[i] * event.pt_gen**2 / 172.5**2
                 event_array[array_Count,mass_gen_index] =    event.mt_gen
+                event_array[array_Count,mass_jet_gen_index] =event.jetmass_rec
                 array_Count+=1
     logger.info( "Done with sample "+sample.name+" and selectionString "+cutInterpreter.cutString(args.selection) )
     #For Loop End
@@ -438,7 +441,7 @@ for sample in mc:
 
     event_array = event_array[0:array_Count]
     print(np.shape(event_array))
-    data_dir = os.path.join(processing_tmp_directory,"data", args.plot_directory, args.era, args.selection,cut,str(args.max_used_part),"ptcut"+str(pt_particle_cut)+"GeV","26_01",sample.name)
+    data_dir = os.path.join(processing_tmp_directory,"data", args.plot_directory, args.era, args.selection,cut,str(args.max_used_part),"ptcut"+str(pt_particle_cut)+"GeV",sample.name)
     if not os.path.exists( data_dir ): os.makedirs( data_dir )
     print("Now save file to " +data_dir)
 

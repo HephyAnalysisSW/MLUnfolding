@@ -24,15 +24,10 @@ argParser.add_argument('--plot_dir',    action='store', type=str, default="MLUnf
 argParser.add_argument('--load_model_file',    action='store', type=str, default="NA") #./mldata/ML_Data_validate.npy
 argParser.add_argument('--save_model_path',    action='store', type=str, default="NA") #./mldata/ML_Data_validate.npy
 argParser.add_argument('--training_weight_cut', action='store', type=float, default=0.0) # ./mldata/ML_Data_validate.npy
-argParser.add_argument('--lr', action='store', type=float, default=1e-4) # ./mldata/ML_Data_validate.npy
 argParser.add_argument('--text_debug',    action='store', type=bool, default=False) #./mldata/ML_Data_validate.npy
 
 args = argParser.parse_args()
 text_debug= args.text_debug
-
-learning_rate = args.lr
-
-print("Learning Rate=", learning_rate)
 
 w_cut = args.training_weight_cut
 
@@ -48,6 +43,12 @@ from nflows.transforms.autoregressive import MaskedAffineAutoregressiveTransform
 from nflows.transforms.autoregressive import MaskedPiecewiseRationalQuadraticAutoregressiveTransform # the basic transformation, which we will stack several times
 from nflows.transforms.coupling import AffineCouplingTransform
 from nflows.transforms.permutations import ReversePermutation # a layer that simply reverts the order of outputs
+
+
+
+def get_loss_weights(w,alpha = 1,w_min = 0,delta_w = 5e-5):
+    r = np.exp(alpha * (w - w_min) / delta_w)
+    return r
 
 cuda = torch.cuda.is_available() 
 if cuda:
@@ -68,6 +69,8 @@ weight_gen_index = 2
 weight_rec_index = 3
 pt_gen_index = 4
 pt_rec_index = 5
+mass_gen_index= 6
+stat_weight_index=7
 
 gen_index = [zeta_gen_index,weight_gen_index,pt_gen_index]
 rec_index = [zeta_rec_index,weight_rec_index,pt_rec_index]
@@ -83,8 +86,12 @@ except FileNotFoundError :
     print("File "+ args.train+" (Train Data) not found.")
     exit(1)
     
+#use weight cut here:
+
 train_data = train_data[train_data[:,weight_gen_index] > w_cut]
     
+r = get_loss_weights(w = train_data[:,weight_rec_index],alpha = 2) #Add the statistical weight
+  
 print("Train Shape: " + str(train_data.shape))
 
 train_data_lenght = np.shape(train_data)[0]
@@ -98,6 +105,11 @@ transformed_data = trf.logit_data(transformed_data)
 mean_values = np.mean(transformed_data, keepdims=True, axis=0)
 std_values = np.std(transformed_data, keepdims=True, axis=0)
 transformed_data = trf.standardize_data(transformed_data, mean_values, std_values)
+
+print("Transformed Shape: " + str(transformed_data.shape))
+print("r Shape: " + str(r[mask].reshape(-1, 1).shape))
+
+transformed_data = np.append(transformed_data, r[mask].reshape(-1, 1) , axis=1) #Add the statistical weight
 
 try :
     with open(args.val, "rb") as f:
@@ -115,10 +127,13 @@ val_data = val_data[val_data[:,weight_gen_index] > w_cut]
 val_transformed_data, mask = trf.normalize_data(val_data, max_values, min_values)
 val_transformed_data = trf.logit_data(val_transformed_data)
 val_transformed_data = trf.standardize_data(val_transformed_data, mean_values, std_values)
+#val_transformed_data = val_transformed_data[mask]
+#val_transformed_data = np.repeat(val_transformed_data,3,axis=0)
 
 print("Train Shape: " + str(transformed_data.shape))
 print("Valid Shape: " + str(val_transformed_data.shape))
  
+       
 #SH:  (from: https://colab.research.google.com/drive/159Uova_QyCMPi8ar-y-V2ouzWSpztUK1#scrollTo=i9xbcZsXw65-)
 
 ##SH: Setup of Flow
@@ -135,20 +150,19 @@ for i in range(0, n_layers):
 transform = CompositeTransform(transforms)
 
 flow = Flow(transform, base_dist).to(device)
-optimizer = optim.Adam(flow.parameters(), lr=learning_rate) # 1e-5, 1e-5
+optimizer = optim.Adam(flow.parameters(), lr=1e-5)
 
 ## --<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>--
 ## Training
 
-num_epochs = 200
+num_epochs = 50
 batch_size =  128# 256
-model_id = 10
+model_id = 6
 
 loss_function_in = []
 loss_function_out=[]
 
 max_batches = int(transformed_data.shape[0] / batch_size)
-
 
 if args.save_model_path != "NA": # untrained model
     save_model_path = os.path.join(args.save_model_path)
@@ -173,12 +187,19 @@ if args.save_model_path != "NA": # untrained model
             x = torch.tensor(x, device=device).float()
             
             y = transformed_data_shuffle[i_batch*batch_size:(i_batch+1)*batch_size,rec_index] 
-            y = torch.tensor(y, device=device).float()#.view(-1, 1)
+            y = torch.tensor(y, device=device).float()
             
+            r = transformed_data_shuffle[i_batch*batch_size:(i_batch+1)*batch_size,stat_weight_index] 
+            r = torch.tensor(r, device=device).float()
+                       
             optimizer.zero_grad()
-            nll = -flow.log_prob(x, context=y) # Feed context
-            loss = nll.mean()
-
+            nll = -flow.log_prob(x, context=y) # Feed context | get nll negative log likelyhood
+            loss = (nll * r).mean() # Todo weighted sum  | Eigentlich will ich hier einen mean haben.          
+            
+            
+            if (i_batch+1) % 50 == 0:
+                exit()
+            
             if i_batch % 500 == 0:
                 print(str(i_batch) + "/" + str(max_batches))
                 print("memory usage: " + str(psutil.Process().memory_info().rss / (1024 * 1024 * 1024)) + "GB")
@@ -210,19 +231,20 @@ if args.save_model_path != "NA": # untrained model
         nll_out = -flow.log_prob(x_val, context=y_val)
         loss_out = nll_out.mean()
         loss_function_out.append(loss_out.item())
-        
+            
         if args.save_model_path != "NA":
             save_model_path = os.path.join(args.save_model_path, "weight_cut_" + str(w_cut).replace('.', 'p'))
             if not os.path.exists( save_model_path ): os.makedirs( save_model_path )
-            save_model_file = save_model_path+"/m"+str(model_id)+"f"+str(n_features)+"e"+str(i+1).zfill(3)+"of"+str(num_epochs)+".pt" # 3of50 = after the 3rd training
+            save_model_file = save_model_path+"/m"+str(model_id)+"f"+str(n_features)+"e"+str(i+1).zfill(2)+"of"+str(num_epochs)+".pt" # 3of50 = after the 3rd training
             torch.save(flow, save_model_file)
         del transformed_data_shuffle
         del permut
         gc.collect()
         
-        
+            
 now = datetime.now()
 current_time = now.strftime("%H_%M_%S")
+
 it=[*range(len(loss_function_in))]
 if args.save_model_path != "NA":
     save_model_path = os.path.join(args.save_model_path, "weight_cut_" + str(w_cut).replace('.', 'p'))
@@ -232,7 +254,6 @@ if args.save_model_path != "NA":
     plt.plot(it,loss_function_out, label="Validation-Loss", color="red", alpha=0.5)
     plt.xlabel("Epochs")
     plt.ylabel("Loss Function")
-    plt.title("learning rate= " + str(learning_rate))
     plt.legend()
     plt.savefig(save_model_path+"/loss"+current_time+".png")
     plt.close("all")

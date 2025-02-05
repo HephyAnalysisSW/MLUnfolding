@@ -16,9 +16,3 @@ EEEC_ML_Data_3  :   mache gleich zeta * pt^2 draus
 
 
 Welches Daten zum Generieren verwendet werden, steht in nanoTuples_UL2018_nanoAOD_onesample.py (/users/simon.hablas/CMSSW_10_6_28/src/EEEC/samples/python)
-
-eleganterer Weg? Files hinstellen
-
-Plot machen: Warum verschiebt sich der ursprüngliche Peak nicht? 
-
-Plots ändern: Ticks oben und unten links und rechts

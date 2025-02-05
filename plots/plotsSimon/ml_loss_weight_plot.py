@@ -16,7 +16,6 @@ import psutil
 import gc
 
 from MLUnfolding.Tools.user  import plot_directory
-#plot_directory = "./plots"
 
 # Function to calculate sum of squared weights for each bin
 def calc_squared_weights(data, weights, bins):
@@ -25,27 +24,28 @@ def calc_squared_weights(data, weights, bins):
     return hist_squared
 
 def calculate_chisq(hist1, hist2, hist_squared1):
-    # Create a mask to exclude rows where hist_squared1 is 0
     valid_mask = hist_squared1 != 0
-    # Apply the mask to the arrays
     chi_squared = np.sum(
         np.square(hist1[valid_mask] - hist2[valid_mask]) / hist_squared1[valid_mask]
     )
     return chi_squared
-
+    
+def get_loss_weights(w,alpha = 2,w_min = 0,delta_w = 5e-5):
+    r = np.exp(alpha * (w - w_min) / delta_w)
+    return r
 
 import argparse
 argParser = argparse.ArgumentParser(description = "Argument parser")
 argParser.add_argument('--logLevel', action='store',      default='INFO', nargs='?', choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'TRACE', 'NOTSET'], help="Log level for logging")
-argParser.add_argument('--train',  action='store', type=str, default="NA") # ./mldata/ML_Data_train.npy
-argParser.add_argument('--val',    action='store', type=str, default="NA") # ./mldata/ML_Data_validate.npy
-argParser.add_argument('--plot_dir',    action='store', type=str, default="MLUnfolding_tmp") # ./mldata/ML_Data_validate.npy
-argParser.add_argument('--load_model_file',    action='store', type=str, default="NA") #./mldata/ML_Data_validate.npy
-argParser.add_argument('--save_model_path',    action='store', type=str, default="NA") #./mldata/ML_Data_validate.npy
-argParser.add_argument('--load_model_path',    action='store', type=str, default="NA") #./mldata/ML_Data_validate.npy
-argParser.add_argument('--info',    action='store', type=str, default="NA") #./mldata/ML_Data_validate.npy
-argParser.add_argument('--weight_cut', action='store', type=float, default=0.0) # ./mldata/ML_Data_validate.npy
-argParser.add_argument('--text_debug',    action='store', type=bool, default=True) #./mldata/ML_Data_validate.npy
+argParser.add_argument('--train',  action='store', type=str, default="NA") 
+argParser.add_argument('--val',    action='store', type=str, default="NA") 
+argParser.add_argument('--plot_dir',    action='store', type=str, default="MLUnfolding_tmp") 
+argParser.add_argument('--load_model_file',    action='store', type=str, default="NA") 
+argParser.add_argument('--save_model_path',    action='store', type=str, default="NA") 
+argParser.add_argument('--load_model_path',    action='store', type=str, default="NA") 
+argParser.add_argument('--info',    action='store', type=str, default="NA") 
+argParser.add_argument('--weight_cut', action='store', type=float, default=0.0) 
+argParser.add_argument('--text_debug',    action='store', type=bool, default=True) 
 
 args = argParser.parse_args()
 
@@ -56,10 +56,9 @@ print("Hi")
 w_cut = args.weight_cut
 text_debug= args.text_debug
 
-plot_dir = os.path.join(plot_directory, args.plot_dir,"weight_cut_" + str(w_cut).replace('.', 'p'),"stack_with_sample_cut")# Zusammenpasten von plot_dir
+plot_dir = os.path.join(plot_directory, args.plot_dir,"weight_cut_" + str(w_cut).replace('.', 'p'),"stack_with_reweighted_loss")# Zusammenpasten von plot_dir
 if not os.path.exists( plot_dir ): os.makedirs( plot_dir )
-plot_dir_data = os.path.join(plot_dir,"data")
-if not os.path.exists( plot_dir_data ): os.makedirs( plot_dir_data )
+
 
 # the nflows functions what we will need in order to build our flow
 from nflows.flows.base import Flow # a container that will wrap the parts that make up a normalizing flow
@@ -106,7 +105,7 @@ print("Started")
 try :
     with open(args.train, "rb") as f:
         train_data_uncut = np.load(f)
-        train_data = train_data_uncut[0:1000000]
+        train_data = train_data_uncut[0:1000000, :6]
         train_data = train_data[train_data[:, weight_gen_index] > w_cut] #SH: Apply cut for weight
         f.close()
         
@@ -144,31 +143,31 @@ print("\nSampling now:")
 try :
     with open(args.val, "rb") as f:
         val_data_uncut = np.load(f)
-        val_data_plot = val_data_uncut[0:1000000]
+        val_data_plot = val_data_uncut[0:1000000, :6]
         val_data = val_data_plot[val_data_plot[:, weight_gen_index] > w_cut] #SH: Apply cut for weight # val_data_plot#
-
         f.close()
         
 except FileNotFoundError :
     print("File \""+ args.val+"\" not found.")
     exit(1)
- 
+    
+if text_debug == True : 
+    print("Lenght of val data: " + str( np.shape(val_data)[0]))
+    print("Cols of val data  : "   + str(np.shape(val_data)[1]))
+    
+    
 val_transformed_data, mask = trf.normalize_data(val_data, max_values, min_values)
 val_transformed_data = trf.logit_data(val_transformed_data)
 val_transformed_data = trf.standardize_data(val_transformed_data, mean_values, std_values)
 val_trans_cond = torch.tensor(val_transformed_data[:,rec_index], device=device).float()
 val_data = val_data[mask]
 
+
 print(val_trans_cond.shape)
 
-# Get only .pt files
-models = [file for file in os.listdir(args.load_model_path) 
-          if os.path.isfile(os.path.join(args.load_model_path, file)) and file.endswith('.pt')]
+models = [file for file in os.listdir(args.load_model_path) if os.path.isfile(os.path.join(args.load_model_path, file))]
 
-# Sort alphanumerically, handling natural numbers correctly
 models.sort()
-
-
 loss_function_in = []
 loss_function_out=[]
 
@@ -185,7 +184,7 @@ y_val = val_transformed_data[:,rec_index]
 y_val = torch.tensor(y_val, device=device).float()
 
 #models = models[-10:] # only use last 10 models
-#models = models[-1:] # only use last model
+models = models[-1:] # only use last model
 
 print(models)
 
@@ -236,6 +235,15 @@ for modelname in models:
     modelname = modelname.replace("m2f3e", "")
     modelname = modelname.zfill(2)
     
+    alpha = 1.0
+    w_min = 0
+    delta_w = 5e-5
+    
+    print("Shape of val gen_weight:")
+    print(np.shape(val_data[:,weight_rec_index]))
+    #SH: Get the loss weights for the reweighting
+    r = get_loss_weights(w = val_data[:,weight_rec_index],alpha = 2,delta_w = delta_w) #SH calculate the statistical mass
+    
     fig, axs =  plt.subplots(2, 3, sharex = "col", tight_layout=True,figsize=(15, 6), gridspec_kw=
                                     dict(height_ratios=[6, 1],
                                           width_ratios=[1, 1, 1]))
@@ -280,11 +288,13 @@ for modelname in models:
     
     hist1,_ = np.histogram(retransformed_samples[:,weight_sample_index], bins= n_bins)
     hist2,_ = np.histogram(val_data[:,weight_rec_index]    ,bins= n_bins)
+    hist5,_ = np.histogram(val_data[:,weight_rec_index], weights =r, bins= n_bins)
     hist3,_ = np.histogram(val_data[:,weight_gen_index] , bins= n_bins)
     hist4 = np.divide(hist1, hist3, where=hist3!=0)
     
     hep.histplot(hist1,       n_bins, ax=axs[0,1],color = "red",alpha = 0.5,      label = "ML Val Particle Lvl", histtype="fill")
     hep.histplot(hist2,       n_bins, ax=axs[0,1],color = "black",   label = "Val Detector Lvl") 
+    hep.histplot(hist5,       n_bins, ax=axs[0,1],color = "blue",   label = "Val Detector Lvl Reweighted") 
     hep.histplot(hist3,       n_bins, ax=axs[0,1],color = "#999999", label = "Particle Lvl"    )
     hep.histplot(hist4, n_bins, ax=axs[1,1],color = "red", alpha = 0.5)
     
@@ -350,22 +360,42 @@ for modelname in models:
     
     
     axs[0,0].set_ylim([1, 1e5])
-    axs[0,1].set_ylim([1e3, 1e5])
+    axs[0,1].set_ylim([1e3, 1e6])
     axs[0,0].set_xlim([0, 7])
     axs[0,1].set_xlim([0, 0.0001])
     #axs[0,1].set_xlim([0, 0.00003])
     axs[0,2].set_xlim([0, 7])
   
+
+    
+    #axs[0,1].xaxis.set(minor_locator=ticker.MultipleLocator(25))
+    #axs[0,1].yaxis.set(minor_locator=ticker.MultipleLocator(1000))
+    #axs[0,0].yaxis.set(minor_locator=ticker.MultipleLocator(1000))
+    #axs[0,0].ticklabel_format(axis='y', style='sci',scilimits=(2,4))
+    #axs[0,1].ticklabel_format(axis='y', style='sci',scilimits=(2,4))
+    #ax0 = axs[0,0].twinx()
+    #ax0.set_ylim(axs[0,0].get_ylim())
+    #ax0.set_yticks(axs[0,0].get_yticks(),"")
+    #ax0.yaxis.set(minor_locator=ticker.MultipleLocator(1000))
+    #ax0.xaxis.set(minor_locator=ticker.MultipleLocator(10))
+    
+    
+    
     plt.savefig(plot_dir+"/generated_data_"+modelname+".png")
     plt.close("all")
     
-    with open(plot_dir_data+modelname+".npy", 'wb') as f0:
-        np.save(f0, retransformed_samples )
-
-with open(plot_dir_data+"/data/train.npy", 'wb') as f0:
-    np.save(f0, train_data_uncut )
-with open(plot_dir_data+"/data/"+modelname+".npy", 'wb') as f1:
-    np.save(f1, val_data_uncut )
+    
+    if False:
+        share_dir = plot_dir # "/scratch-cbe/users/simon.hablas/MLUnfolding/share_dennis"
+        print("Shard Files to " + share_dir)
+        #with open(share_dir+"/val.npy", 'wb') as f0:
+            #np.save(f0, val_data ) 
+            
+        with open(share_dir+"/train.npy", 'wb') as f0:
+            np.save(f0, train_data ) 
+        
+        with open(share_dir+"/ML_Sampled_from_val.npy", 'wb') as f0:
+            np.save(f0, retransformed_samples ) 
     
 it=[*range(len(loss_function_in))]
 
@@ -374,6 +404,6 @@ plt.plot(it,loss_function_out, label="Validation-Loss", color="red", alpha=0.5)
 plt.xlabel("Epochs")
 plt.ylabel("-log loss")
 plt.legend()
-plt.savefig(plot_dir_data+"/loss"+current_time+".png")
+plt.savefig(plot_dir+"/loss"+current_time+".png")
 plt.close("all")
 
