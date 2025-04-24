@@ -12,6 +12,12 @@ from datetime import datetime
 import os
 #from __future__ import print_function
 import transformations as trf                             
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ExponentialLR
+from torch.optim.lr_scheduler import CosineAnnealingLR
+
+
+
 
 from MLUnfolding.Tools.user  import plot_directory
 
@@ -135,13 +141,16 @@ for i in range(0, n_layers):
 transform = CompositeTransform(transforms)
 
 flow = Flow(transform, base_dist).to(device)
-optimizer = optim.Adam(flow.parameters(), lr=1e-4) # 1e-5, 1e-5
+optimizer = optim.AdamW(flow.parameters(), lr=1e-3, weight_decay=1e-5)  # Adjust weight_decay if needed
+#scheduler = ExponentialLR(optimizer, gamma=0.988)
+scheduler = CosineAnnealingLR(optimizer, T_max=170, eta_min=1e-7)
+
 
 ## --<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>--
 ## Training
 
 num_epochs = 200
-batch_size =  128# 256
+batch_size =  512
 model_id = 10
 
 loss_function_in = []
@@ -157,20 +166,7 @@ if args.save_model_path != "NA": # untrained model
     torch.save(flow, save_model_file)
     print("")
     print("Training ongoing:")
-    for i in range(num_epochs):
-        if  i == 50 :
-            print("Changed Learning Rate to 1e-5")
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = 1e-5
-        if  i == 100 :
-            print("Changed Learning Rate to 3e-6")
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = 3e-6
-        if  i == 150 :
-            print("Changed Learning Rate to 1e-6")
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = 1e-6
-        
+    for i in range(num_epochs):            
             
         permut = np.random.permutation(transformed_data.shape[0])
         transformed_data_shuffle = transformed_data[permut]
@@ -233,6 +229,7 @@ if args.save_model_path != "NA": # untrained model
         del transformed_data_shuffle
         del permut
         gc.collect()
+        scheduler.step()
         
         
 now = datetime.now()

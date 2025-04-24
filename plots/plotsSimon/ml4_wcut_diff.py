@@ -12,6 +12,12 @@ from datetime import datetime
 import os
 #from __future__ import print_function
 import transformations as trf                             
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ExponentialLR
+# use ode solver that can operate on gpu
+from torchdiffeq import odeint
+from torch.utils.data import Dataset, DataLoader
+
 
 from MLUnfolding.Tools.user  import plot_directory
 
@@ -26,6 +32,8 @@ argParser.add_argument('--save_model_path',    action='store', type=str, default
 argParser.add_argument('--training_weight_cut', action='store', type=float, default=0.0) # ./mldata/ML_Data_validate.npy
 argParser.add_argument('--lr', action='store', type=float, default=1e-4) # ./mldata/ML_Data_validate.npy
 argParser.add_argument('--text_debug',    action='store', type=bool, default=False) #./mldata/ML_Data_validate.npy
+argParser.add_argument('--hidden_dim', action='store', type=int, default=64)
+argParser.add_argument('--hidden_layers', action='store', type=int, default=3)
 
 args = argParser.parse_args()
 text_debug= args.text_debug
@@ -39,15 +47,81 @@ w_cut = args.training_weight_cut
 plot_dir = os.path.join(plot_directory, args.plot_dir)# Zusammenpasten von plot_dir
 if not os.path.exists( plot_dir ): os.makedirs( plot_dir )
 
+class TransformedDataset(Dataset):
+    def __init__(self, transformed_data, gen_index, rec_index, device):
+        self.x_data = torch.tensor(transformed_data[:, gen_index], dtype=torch.float32, device=device)
+        self.y_data = torch.tensor(transformed_data[:, rec_index], dtype=torch.float32, device=device)
 
-# the nflows functions what we will need in order to build our flow
-from nflows.flows.base import Flow # a container that will wrap the parts that make up a normalizing flow
-from nflows.distributions.normal import StandardNormal # Gaussian latent space distribution
-from nflows.transforms.base import CompositeTransform # a wrapper to stack simpler transformations to form a more complex one
-from nflows.transforms.autoregressive import MaskedAffineAutoregressiveTransform # the basic transformation, which we will stack several times
-from nflows.transforms.autoregressive import MaskedPiecewiseRationalQuadraticAutoregressiveTransform # the basic transformation, which we will stack several times
-from nflows.transforms.coupling import AffineCouplingTransform
-from nflows.transforms.permutations import ReversePermutation # a layer that simply reverts the order of outputs
+    def __len__(self):
+        return len(self.x_data)
+
+    def __getitem__(self, index):
+        return self.x_data[index], self.y_data[index]
+
+class CFM(nn.Module):
+    def __init__(
+        self,
+        data_dim: int,  # Number of features in the data
+        hidden_dim: int,  # Number of hidden layer nodes
+        hidden_layers: int = 3,  # Number of hidden layers
+    ):
+        super().__init__()
+        self.data_dim = data_dim
+        self.hidden_dim = hidden_dim
+        self.hidden_layers = hidden_layers
+
+        layers = [nn.Linear(data_dim + 1, hidden_dim), nn.ReLU()]  # Input layer
+
+        for _ in range(hidden_layers):
+            layers.append(nn.Linear(hidden_dim, hidden_dim))
+            layers.append(nn.ReLU())
+
+        layers.append(nn.Linear(hidden_dim, data_dim // 2))  # Output layer
+
+        self.net = nn.Sequential(*layers)
+
+
+    def batch_loss(
+        self,
+        x: torch.Tensor, # input data, shape (n_batch, data_dim/2)
+        y: torch.Tensor, # conditional data, shape (n_batch, condition_dim)
+    ) -> torch.Tensor:   # loss, shape (n_batch, )
+
+        # TODO: Implement the batch_loss
+        
+        t = torch.rand(size=(x.shape[0], 1))
+        noise = torch.randn_like(x)
+        xt = (1-t)*x + t*noise
+        model_pred = self.net(torch.cat((t.float(),xt.float(),y.float()), dim=1))
+
+        v = noise - x
+
+        return ((model_pred-v)**2).mean()
+
+    def sample(
+        self,
+        y: torch.Tensor,  # Conditional data, shape (n_batch, condition_dim)
+    ) -> torch.Tensor:   # Sampled data, shape (n_samples, data_dim)
+
+        dtype = torch.float32
+        n_samples = y.shape[0]  # Ensure batch size matches
+        x_1 = torch.randn(n_samples, self.data_dim, device=device, dtype=dtype)
+
+        # Define net_wrapper inside sample, capturing `y` (which is already batch-aligned)
+        def net_wrapper(t, x_t):
+            t = t * torch.ones_like(x_t[:, [0]], dtype=dtype, device=device)  # Expand time dimension
+            nn_input = torch.cat([t, x_t, y], dim=1)  # Concatenate condition `y`
+            nn_out = self.net(nn_input)  # Pass through neural network
+            return nn_out
+
+        # Solve ODE with conditional dynamics
+        x_t = odeint(
+            net_wrapper,
+            x_1,
+            torch.tensor([1., 0.], dtype=dtype, device=device)
+        )
+
+        return x_t[-1]  # Return final sample at t=0
 
 cuda = torch.cuda.is_available() 
 if cuda:
@@ -118,135 +192,83 @@ val_transformed_data = trf.standardize_data(val_transformed_data, mean_values, s
 
 print("Train Shape: " + str(transformed_data.shape))
 print("Valid Shape: " + str(val_transformed_data.shape))
- 
-#SH:  (from: https://colab.research.google.com/drive/159Uova_QyCMPi8ar-y-V2ouzWSpztUK1#scrollTo=i9xbcZsXw65-)
 
-##SH: Setup of Flow
-n_features = 3
-n_features_con = 3
-n_layers = 6
-base_dist = StandardNormal(shape=[n_features])
+epochs = 200
+batch_size = 512 #256
+model_id = 10
+n_features= 3
 
-transforms = []
-for i in range(0, n_layers):
-    transforms.append(MaskedAffineAutoregressiveTransform(features=n_features, hidden_features=128, context_features=n_features_con))
-    transforms.append(ReversePermutation(features=n_features))
+train_dataset = TransformedDataset(transformed_data, gen_index, rec_index, device)
+train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-transform = CompositeTransform(transforms)
+print("Using ", args.hidden_dim, "Hidden nodes, ", args.hidden_layers)
 
-flow = Flow(transform, base_dist).to(device)
-optimizer = optim.Adam(flow.parameters(), lr=1e-4) # 1e-5, 1e-5
 
 ## --<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>--
 ## Training
 
-num_epochs = 200
-batch_size =  128# 256
-model_id = 10
+cfm = CFM(
+    data_dim = n_features*2,
+    hidden_dim = args.hidden_dim,
+    hidden_layers = args.hidden_layers
+    
+)
+
+optimizer = torch.optim.Adam(cfm.parameters(), lr=1e-3)
+scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=1e-2, steps_per_epoch=len(train_dataloader), epochs=epochs)
 
 loss_function_in = []
 loss_function_out=[]
 
-max_batches = int(transformed_data.shape[0] / batch_size)
-
+losses = np.zeros(epochs)
 
 if args.save_model_path != "NA": # untrained model
     save_model_path = os.path.join(args.save_model_path)
     if not os.path.exists( save_model_path ): os.makedirs( save_model_path )
-    save_model_file = save_model_path+"/m"+str(model_id)+"f"+str(n_features)+"e"+"00of"+str(num_epochs)+".pt"
-    torch.save(flow, save_model_file)
+    save_model_file = save_model_path+"/m"+str(model_id)+"f"+str(n_features)+"e"+"00of"+str(epochs)+".pt"
+    torch.save(cfm, save_model_file)
+    
     print("")
     print("Training ongoing:")
-    for i in range(num_epochs):
-        if  i == 50 :
-            print("Changed Learning Rate to 1e-5")
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = 1e-5
-        if  i == 100 :
-            print("Changed Learning Rate to 3e-6")
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = 3e-6
-        if  i == 150 :
-            print("Changed Learning Rate to 1e-6")
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = 1e-6
-        
-            
-        permut = np.random.permutation(transformed_data.shape[0])
-        transformed_data_shuffle = transformed_data[permut]
-        
+    for epoch in range(epochs):
+                    
         gc.collect() #SH Test Garbage Collection
-        if i % 1 == 0: #Only for debugging 
-            print("")
-            print("Epoch "+str(i+1)+"/"+str(num_epochs), end="\t")
-            print(psutil.Process().memory_info().rss / (1024 * 1024)) #SH: Memory Usage Output in MB
-            print("")
-          
-        for i_batch in range(max_batches):
-            x = transformed_data_shuffle[i_batch*batch_size:(i_batch+1)*batch_size,gen_index] 
-            x = torch.tensor(x, device=device).float()
-            
-            y = transformed_data_shuffle[i_batch*batch_size:(i_batch+1)*batch_size,rec_index] 
-            y = torch.tensor(y, device=device).float()#.view(-1, 1)
-            
+        print("")
+        print("Epoch "+str(epoch+1)+"/"+str(epochs), end="\t")
+        print(psutil.Process().memory_info().rss / (1024 * 1024)) #SH: Memory Usage Output in MB
+        print("")
+        
+        epoch_losses = []
+        for i, (x, y) in enumerate(train_dataloader):
+            #print(type(i),type(x),type(y))
+            loss = cfm.batch_loss(x,y)
             optimizer.zero_grad()
-            nll = -flow.log_prob(x, context=y) # Feed context
-            loss = nll.mean()
-
-            if i_batch % 500 == 0:
-                print(str(i_batch) + "/" + str(max_batches))
-                print("memory usage: " + str(psutil.Process().memory_info().rss / (1024 * 1024 * 1024)) + "GB")
-                
             loss.backward()
             optimizer.step()
-            del x
-            del y
-            del nll
-            del loss
+            scheduler.step()
+            epoch_losses.append(loss.item())
             gc.collect() #SH Test Garbage Collection
-            
-        #Calculate In Error
-        x_train = transformed_data_shuffle[:,gen_index] 
-        x_train = torch.tensor(x_train, device=device).float()
-        y_train = transformed_data_shuffle[:,rec_index]
-        y_train = torch.tensor(y_train, device=device).float()#.view(-1, 1)
         
-        nll_in = -flow.log_prob(x_train, context=y_train) # Feed context
-        loss_in = nll_in.mean()
-        loss_function_in.append(loss_in.item())
-        
-        #Calculate Out Error 
-        x_val = val_transformed_data[:,gen_index] # hier
-        x_val = torch.tensor(x_val, device=device).float()
-        y_val = val_transformed_data[:,rec_index] # hier
-        y_val = torch.tensor(y_val, device=device).float()
-        
-        nll_out = -flow.log_prob(x_val, context=y_val)
-        loss_out = nll_out.mean()
-        loss_function_out.append(loss_out.item())
+        epoch_loss = np.mean(epoch_losses)
+        print(f"Epoch {epoch+1}: loss = {epoch_loss}")
+        losses[epoch] = epoch_loss
         
         if args.save_model_path != "NA":
             save_model_path = os.path.join(args.save_model_path, "weight_cut_" + str(w_cut).replace('.', 'p'))
             if not os.path.exists( save_model_path ): os.makedirs( save_model_path )
-            save_model_file = save_model_path+"/m"+str(model_id)+"f"+str(n_features)+"e"+str(i+1).zfill(3)+"of"+str(num_epochs)+".pt" # 3of50 = after the 3rd training
-            torch.save(flow, save_model_file)
-        del transformed_data_shuffle
-        del permut
-        gc.collect()
-        
+            save_model_file = save_model_path+"/m"+str(model_id)+"f"+str(n_features)+"e"+str(epoch+1).zfill(3)+"of"+str(epochs)+".pt" # 3of50 = after the 3rd training
+            torch.save(cfm, save_model_file)
         
 now = datetime.now()
 current_time = now.strftime("%H_%M_%S")
-it=[*range(len(loss_function_in))]
+
 if args.save_model_path != "NA":
     save_model_path = os.path.join(args.save_model_path, "weight_cut_" + str(w_cut).replace('.', 'p'))
     if not os.path.exists( save_model_path ): os.makedirs( save_model_path )
 
-    plt.plot(it,loss_function_in, label="Train-Loss", color="#696969") 
-    plt.plot(it,loss_function_out, label="Validation-Loss", color="red", alpha=0.5)
+    plt.plot(np.arange(1, epochs+1), losses)
     plt.xlabel("Epochs")
     plt.ylabel("Loss Function")
-    plt.title("learning rate= " + str(learning_rate))
     plt.legend()
     plt.savefig(save_model_path+"/loss"+current_time+".png")
     plt.close("all")

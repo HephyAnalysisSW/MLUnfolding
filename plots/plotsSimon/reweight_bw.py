@@ -60,13 +60,18 @@ except FileNotFoundError :
     print("File "+ args.file_in+" (Data) not found.")
     exit(1)
 
+a = 500 
+b = 525
+
+#data = data[(data[:, pt_gen_index] >= a) & (data[:, pt_gen_index] < b)]
+
 #SH: Copy Data
 data_ori = data.copy()
     
 #SH: Perform the Breit Wigner Shift:
-m_old = 174.5
+m_old = 172.5
 m_new = m_old + args.shift
-Gamma = 1.5
+Gamma = 1.3
 
 k_old = get_k(Gamma,m_old)
 k_new = get_k(Gamma,m_new)
@@ -76,10 +81,24 @@ k_new = get_k(Gamma,m_new)
 new_weights = bw_reweight(data[:,mass_gen_index],m_old,m_new,Gamma,1,1)
 
 #SH: Apply new weights
-data[:, weight_gen_index] = data[:, weight_gen_index] * new_weights
-data[:, weight_rec_index] = data[:, weight_rec_index] * new_weights
 
-out = data
+test_sum_gen_before = np.sum(data[:, weight_gen_index])
+test_sum_rec_before = np.sum(data[:, weight_rec_index])
+
+data[:, weight_gen_index] *= new_weights
+data[:, weight_rec_index] *= new_weights
+
+test_sum_gen_after = np.sum(data[:, weight_gen_index])
+test_sum_rec_after = np.sum(data[:, weight_rec_index])
+
+print("Gen - Weight - Factor= ", test_sum_gen_after/test_sum_gen_before)
+print("Rec - Weight - Factor= ", test_sum_rec_after/test_sum_rec_before)
+
+print("Shape of data:", data.shape)
+print("Shape of data[:, weight_gen_index]:", data[:, weight_gen_index].shape)
+print("Shape of new_weights:", new_weights.shape)
+
+
 print(args.shift)
 
 # Extract directory, filename, and extension
@@ -106,11 +125,11 @@ for ax_row in axs:
 fig.suptitle("m_t"+ str(m_new) +"GeV")
     
 number_of_bins = 40
-lower_border_1 = 150
-upper_border_1 = 190
+lower_border_1 = 100
+upper_border_1 = 220
 upper_border = upper_border_1 *100
 lower_border = lower_border_1 *100
-step =  (upper_border- lower_border) // number_of_bins
+step =  (upper_border- lower_border) // (number_of_bins)
 n_bins = [x / 100.0 for x in range(lower_border,upper_border+1,step)] 
 
 hist1,_ = np.histogram(data_ori[:,mass_gen_index], bins= n_bins)
@@ -121,10 +140,10 @@ hep.histplot(hist1,n_bins, ax=axs[0,0],color = "blue",   label = "Rec Ori", hist
 hep.histplot(hist2,n_bins, ax=axs[0,0],color = "blue",   label = "Rec Mod") 
 hep.histplot(hist5, n_bins, ax=axs[1,0],color = "blue", alpha = 0.5) 
 
-upper_border_2 = 3
+upper_border_2 = 6
 upper_border = upper_border_2 * 1000
 upper_border_2 = upper_border_2 / 10000
-step = upper_border // (number_of_bins*2)
+step = upper_border // (number_of_bins)
 n_bins = [x / 10000000.0 for x in range(0,upper_border+1,step)]
 
 
@@ -162,7 +181,7 @@ hep.histplot(hist4,n_bins, ax=axs[0,2],color = "green", label = "Gen Mod")
 hep.histplot(hist5, n_bins, ax=axs[1,2],color = "blue", alpha = 0.5)   
 hep.histplot(hist5, n_bins, ax=axs[1,2],color = "green", alpha = 0.5) 
 
-#axs[0,0].set_yscale("log")
+axs[0,0].set_yscale("log")
 axs[0,1].set_yscale("log")
 
 axs[0,0].legend(frameon = False, fontsize="18")
@@ -183,9 +202,9 @@ axs[1,0].grid(axis = "y")
 axs[1,1].grid(axis = "y")
 axs[1,2].grid(axis = "y")
 
-axs[1,0].set_ylim([0.7, +1.3])
-axs[1,1].set_ylim([0.7, +1.3])
-axs[1,2].set_ylim([0.7, +1.3])
+axs[1,0].set_ylim([0.5, +2])
+axs[1,1].set_ylim([0.5, +2])
+axs[1,2].set_ylim([0.5, +2])
 
 #axs[0,0].set_ylim([1, 1e5])
 axs[0,1].set_ylim([1e2, 1e6])
@@ -197,5 +216,5 @@ plt.savefig(new_plot_path)
 plt.close("all")
 
 with open(new_path, 'wb') as f3:
-    np.save(f3, out)
-del out
+    np.save(f3, data)
+del data

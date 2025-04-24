@@ -3,17 +3,18 @@ import torch
 from torch import nn
 from torch import optim
 import matplotlib
-matplotlib.use('Agg') # set the backend before importing pyplot
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import sys
 import gc
 import psutil
 from datetime import datetime
 import os
-#from __future__ import print_function
 import transformations as trf                             
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ExponentialLR
+from schedulefree import AdamWScheduleFree
 
-from MLUnfolding.Tools.user  import plot_directory
 
 import argparse
 argParser = argparse.ArgumentParser(description = "Argument parser")
@@ -26,6 +27,9 @@ argParser.add_argument('--save_model_path',    action='store', type=str, default
 argParser.add_argument('--training_weight_cut', action='store', type=float, default=0.0) # ./mldata/ML_Data_validate.npy
 argParser.add_argument('--lr', action='store', type=float, default=1e-4) # ./mldata/ML_Data_validate.npy
 argParser.add_argument('--text_debug',    action='store', type=bool, default=False) #./mldata/ML_Data_validate.npy
+argParser.add_argument('--nodes', action='store', type=int, default=128)
+argParser.add_argument('--layers', action='store', type=int, default=6)
+argParser.add_argument('--networkdepth', action='store', type=int, default=2)
 
 args = argParser.parse_args()
 text_debug= args.text_debug
@@ -35,9 +39,6 @@ learning_rate = args.lr
 print("Learning Rate=", learning_rate)
 
 w_cut = args.training_weight_cut
-
-plot_dir = os.path.join(plot_directory, args.plot_dir)# Zusammenpasten von plot_dir
-if not os.path.exists( plot_dir ): os.makedirs( plot_dir )
 
 
 # the nflows functions what we will need in order to build our flow
@@ -124,25 +125,42 @@ print("Valid Shape: " + str(val_transformed_data.shape))
 ##SH: Setup of Flow
 n_features = 3
 n_features_con = 3
-n_layers = 6
+n_layers = args.layers
 base_dist = StandardNormal(shape=[n_features])
 
 transforms = []
 for i in range(0, n_layers):
-    transforms.append(MaskedAffineAutoregressiveTransform(features=n_features, hidden_features=128, context_features=n_features_con))
+    transforms.append(MaskedAffineAutoregressiveTransform(features=n_features, hidden_features=args.nodes, num_blocks = args.networkdepth, context_features=n_features_con))
     transforms.append(ReversePermutation(features=n_features))
 
 transform = CompositeTransform(transforms)
 
 flow = Flow(transform, base_dist).to(device)
-optimizer = optim.Adam(flow.parameters(), lr=1e-4) # 1e-5, 1e-5
+
+optimizer = AdamWScheduleFree(
+    flow.parameters(),
+    lr=learning_rate,        
+    betas=(0.9, 0.999),      
+    eps=1e-8,                
+    weight_decay=0.01,       
+    warmup_steps=1000,       
+    r=0.0,                   
+    weight_lr_power=2.0,     
+    foreach=True             
+)
 
 ## --<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>--
 ## Training
 
+model_id=10
 num_epochs = 200
-batch_size =  128# 256
-model_id = 10
+batch_size =  512
+
+
+if args.nodes >= 256 or args.networkdepth >= 2:
+    batch_size= 256
+
+print("Batchsize=",batch_size)
 
 loss_function_in = []
 loss_function_out=[]
@@ -157,21 +175,11 @@ if args.save_model_path != "NA": # untrained model
     torch.save(flow, save_model_file)
     print("")
     print("Training ongoing:")
-    for i in range(num_epochs):
-        if  i == 50 :
-            print("Changed Learning Rate to 1e-5")
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = 1e-5
-        if  i == 100 :
-            print("Changed Learning Rate to 3e-6")
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = 3e-6
-        if  i == 150 :
-            print("Changed Learning Rate to 1e-6")
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = 1e-6
+    for i in range(num_epochs):            
         
-            
+        optimizer.train()  # Set optimizer to training mode
+        flow.train()  # Set model to training mode
+
         permut = np.random.permutation(transformed_data.shape[0])
         transformed_data_shuffle = transformed_data[permut]
         
@@ -199,12 +207,12 @@ if args.save_model_path != "NA": # untrained model
                 
             loss.backward()
             optimizer.step()
-            del x
-            del y
-            del nll
-            del loss
+            del x, y, nll
             gc.collect() #SH Test Garbage Collection
-            
+        
+        optimizer.eval()
+        flow.eval()
+        
         #Calculate In Error
         x_train = transformed_data_shuffle[:,gen_index] 
         x_train = torch.tensor(x_train, device=device).float()
@@ -214,6 +222,12 @@ if args.save_model_path != "NA": # untrained model
         nll_in = -flow.log_prob(x_train, context=y_train) # Feed context
         loss_in = nll_in.mean()
         loss_function_in.append(loss_in.item())
+        
+        #SH Early Stopping
+        if len(loss_function_in) > 50:
+            if abs(loss_function_in[-1] - loss_function_in[-2]) < 1e-5:
+                print("Training stopped early at ",i,"Epochs. loss difference < 1e-4")
+                break
         
         #Calculate Out Error 
         x_val = val_transformed_data[:,gen_index] # hier
@@ -234,6 +248,9 @@ if args.save_model_path != "NA": # untrained model
         del permut
         gc.collect()
         
+       
+        #scheduler.step()
+        
         
 now = datetime.now()
 current_time = now.strftime("%H_%M_%S")
@@ -250,3 +267,5 @@ if args.save_model_path != "NA":
     plt.legend()
     plt.savefig(save_model_path+"/loss"+current_time+".png")
     plt.close("all")
+
+print("training finished!", " plotted in ",save_model_path)

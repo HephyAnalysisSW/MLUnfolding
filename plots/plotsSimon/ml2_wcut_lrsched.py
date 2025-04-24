@@ -31,6 +31,10 @@ argParser.add_argument('--save_model_path',    action='store', type=str, default
 argParser.add_argument('--training_weight_cut', action='store', type=float, default=0.0) # ./mldata/ML_Data_validate.npy
 argParser.add_argument('--lr', action='store', type=float, default=1e-4) # ./mldata/ML_Data_validate.npy
 argParser.add_argument('--text_debug',    action='store', type=bool, default=False) #./mldata/ML_Data_validate.npy
+argParser.add_argument('--nodes', action='store', type=int, default=128)
+argParser.add_argument('--layers', action='store', type=int, default=6)
+argParser.add_argument('--networkdepth', action='store', type=int, default=2)
+
 
 args = argParser.parse_args()
 text_debug= args.text_debug
@@ -129,12 +133,14 @@ print("Valid Shape: " + str(val_transformed_data.shape))
 ##SH: Setup of Flow
 n_features = 3
 n_features_con = 3
-n_layers = 6
+n_layers = args.layers
 base_dist = StandardNormal(shape=[n_features])
+
+print("Using ", args.nodes, "Hidden nodes, ", args.layers , " Layers, with a depth of", args.networkdepth)
 
 transforms = []
 for i in range(0, n_layers):
-    transforms.append(MaskedAffineAutoregressiveTransform(features=n_features, hidden_features=32, context_features=n_features_con))
+    transforms.append(MaskedAffineAutoregressiveTransform(features=n_features, hidden_features=args.nodes,num_blocks = args.networkdepth, context_features=n_features_con))
     transforms.append(ReversePermutation(features=n_features))
 
 transform = CompositeTransform(transforms)
@@ -147,7 +153,7 @@ scheduler = ExponentialLR(optimizer, gamma=0.98)
 ## Training
 
 num_epochs = 200
-batch_size =  128# 256
+batch_size =  256 #512 # 128 # 
 model_id = 10
 
 loss_function_in = []

@@ -23,7 +23,7 @@ argParser.add_argument('--val',    action='store', type=str, default="NA") # ./m
 argParser.add_argument('--plot_dir',    action='store', type=str, default="MLUnfolding_tmp") # ./mldata/ML_Data_validate.npy
 argParser.add_argument('--load_model_file',    action='store', type=str, default="NA") #./mldata/ML_Data_validate.npy
 argParser.add_argument('--save_model_path',    action='store', type=str, default="NA") #./mldata/ML_Data_validate.npy
-argParser.add_argument('--training_weight_cut', action='store', type=float, default=0.0) # ./mldata/ML_Data_validate.npy
+argParser.add_argument('--training_weight_cut', action='store', type=float, default=1.5e-5) # ./mldata/ML_Data_validate.npy
 argParser.add_argument('--text_debug',    action='store', type=bool, default=False) #./mldata/ML_Data_validate.npy
 
 args = argParser.parse_args()
@@ -70,7 +70,7 @@ weight_rec_index = 3
 pt_gen_index = 4
 pt_rec_index = 5
 mass_gen_index= 6
-stat_weight_index=7
+stat_weight_index=8
 
 gen_index = [zeta_gen_index,weight_gen_index,pt_gen_index]
 rec_index = [zeta_rec_index,weight_rec_index,pt_rec_index]
@@ -90,8 +90,9 @@ except FileNotFoundError :
 
 train_data = train_data[train_data[:,weight_gen_index] > w_cut]
     
-r = get_loss_weights(w = train_data[:,weight_rec_index],alpha = 2) #Add the statistical weight
-  
+r = get_loss_weights(w = train_data[:,weight_rec_index],alpha = 1.5) #Add the statistical weight
+r = np.clip(r, None, 100) # Outlier dürfen nicht überwiegen
+
 print("Train Shape: " + str(train_data.shape))
 
 train_data_lenght = np.shape(train_data)[0]
@@ -155,8 +156,8 @@ optimizer = optim.Adam(flow.parameters(), lr=1e-5)
 ## --<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>--
 ## Training
 
-num_epochs = 50
-batch_size =  128# 256
+num_epochs = 100
+batch_size =  128
 model_id = 6
 
 loss_function_in = []
@@ -191,14 +192,32 @@ if args.save_model_path != "NA": # untrained model
             
             r = transformed_data_shuffle[i_batch*batch_size:(i_batch+1)*batch_size,stat_weight_index] 
             r = torch.tensor(r, device=device).float()
+            r = torch.where(torch.isnan(r) | torch.isinf(r), torch.tensor(1.0, device=device), r)
                        
             optimizer.zero_grad()
             nll = -flow.log_prob(x, context=y) # Feed context | get nll negative log likelyhood
-            loss = (nll * r).mean() # Todo weighted sum  | Eigentlich will ich hier einen mean haben.          
+            loss_tmp = (nll * r) 
+            loss = loss_tmp.mean() # Todo weighted sum  | Eigentlich will ich hier eine summe haben.          
+
+            if torch.isnan(nll).any():
+                print("NA in nll")
+            if torch.isinf(nll).any():
+                print("inf in nll")
+            if torch.isnan(r).any():
+                print("NA in nll")
+            if torch.isinf(r).any():
+                print("inf in r")
             
+            if False:
+                print("loss tmp:", loss_tmp)
+                print("")
+                print("nll:", nll)
+                print("")
+                print("r", r)
+                print("_________________________________________________________")
             
-            if (i_batch+1) % 50 == 0:
-                exit()
+            #if (i_batch+1) % 50 == 0:
+                #exit()
             
             if i_batch % 500 == 0:
                 print(str(i_batch) + "/" + str(max_batches))
