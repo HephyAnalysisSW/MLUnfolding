@@ -15,24 +15,28 @@ import transformations as trf
 import psutil
 import gc
 
+from indices import (
+    zeta_gen_index,
+    zeta_rec_index,
+    weight_gen_index,
+    weight_rec_index,
+    pt_gen_index,
+    pt_rec_index,
+    mass_gen_index,
+    mass_jet_gen_index,
+    gen_index,
+    rec_index,
+    zeta_sample_index,
+    weight_sample_index,
+    
+    sample_index
+)
+
+from ml_functions import (calc_squared_weights,calculate_chisq)
 #from MLUnfolding.Tools.user  import plot_directory
 #plot_directory = "./plots"
 
-# Function to calculate sum of squared weights for each bin
-def calc_squared_weights(data, weights, bins):
-    squared_weights = np.square(weights)
-    hist_squared, _ = np.histogram(data, bins=bins, weights=squared_weights)
-    return hist_squared
-
-def calculate_chisq(hist1, hist2, hist_squared1):
-    # Create a mask to exclude rows where hist_squared1 is 0
-    valid_mask = hist_squared1 != 0
-    # Apply the mask to the arrays
-    chi_squared = np.sum(
-        np.square(hist1[valid_mask] - hist2[valid_mask]) / hist_squared1[valid_mask]
-    )
-    return chi_squared
-
+from matplotlib.ticker import FuncFormatter
 
 import argparse
 argParser = argparse.ArgumentParser(description = "Argument parser")
@@ -84,25 +88,6 @@ text_debug= True#False
 plot_debug = False#
 table_debug = False#True#False
 
-#SH To Avoid Index Confusion
-zeta_gen_index = 0
-zeta_rec_index = 1
-weight_gen_index = 2
-weight_rec_index = 3
-pt_gen_index = 4
-pt_rec_index = 5
-mass_gen_index= 6
-
-
-gen_index = [zeta_gen_index,weight_gen_index,pt_gen_index]
-rec_index = [zeta_rec_index,weight_rec_index,pt_rec_index]
-
-zeta_sample_index = 0
-weight_sample_index = 1
-pt_sample_index = 2
-
-
-sample_index = [zeta_sample_index,weight_sample_index,pt_sample_index]
 
 print("Started")
 try :
@@ -170,12 +155,6 @@ models = [file for file in os.listdir(args.load_model_path)
 # Sort alphanumerically, handling natural numbers correctly
 models.sort()
 
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
-
-
 loss_function_in = []
 loss_function_out=[]
 
@@ -183,7 +162,7 @@ loss_function_out=[]
 x_train = transformed_data[:,gen_index]
 x_train = torch.tensor(x_train, device=device).float()
 y_train = transformed_data[:,rec_index]
-y_train = torch.tensor(y_train, device=device).float()#.view(-1, 1)
+y_train = torch.tensor(y_train, device=device).float()
 
 #Calculate Out Error 
 x_val = val_transformed_data[:,gen_index]
@@ -194,7 +173,6 @@ y_val = torch.tensor(y_val, device=device).float()
 plt_w = 1 # SH: plot Weight
 plt_wz = 2#SH: plot weighted Zeta
 plt_z = 0#
-
 plt_d = 0 #SH: Plot Data
 plt_r = 1 #SH: Plot Ration Pad
 
@@ -238,6 +216,7 @@ for modelname in models:
     retransformed_samples = trf.normalize_inverse(retransformed_samples, max_values[:,gen_index], min_values[:,gen_index]) 
 
 
+
     if text_debug :
         print("val data shape =",     val_trans_cond.shape)
         print("sampled data shape =", retransformed_samples.shape)
@@ -262,11 +241,12 @@ for modelname in models:
         for ax in ax_row:
             ax.tick_params(axis="both", which="both", direction="in", top=True, right=True)
             
-    if args.info == "NA" :
-        fig.suptitle("Epoch: "+modelname)
-    else :
-        fig.suptitle(args.info + " | Epoch: "+modelname)
+    #if args.info == "NA" :
+    #    fig.suptitle("Epoch: "+modelname)
+    #else :
+    #    fig.suptitle(args.info + " | Epoch: "+modelname)
         
+    
     #_________________________________________________________________________________________________________________
     #--SH: Plot Zeta`
     number_of_bins = 20
@@ -280,37 +260,40 @@ for modelname in models:
     hist3,_ = np.histogram(val_data[:,zeta_gen_index] ,bins= n_bins)
     hist4 = np.divide(hist1, hist3, where=hist3!=0)
     
-    hep.histplot(hist1,       n_bins, ax=axs[0,0],color = "red",alpha = 0.5,      label = "ML Val Particle Lvl", histtype="fill")
-    hep.histplot(hist2,       n_bins, ax=axs[0,0],color = "black",   label = "Val Detector Lvl") 
-    hep.histplot(hist3,       n_bins, ax=axs[0,0],color = "#999999", label = "Particle Lvl"    )
-    hep.histplot(hist4, n_bins, ax=axs[1,0],color = "red", alpha = 0.5)   
+    hep.histplot(hist1,       n_bins, ax=axs[plt_d,plt_z],color = "red",alpha = 1 ,      label = "ML Val Particle Lvl")#, histtype="fill")
+    hep.histplot(hist2,       n_bins, ax=axs[plt_d,plt_z],color = "black",   label = "Val Detector Lvl") 
+    hep.histplot(hist3,       n_bins, ax=axs[plt_d,plt_z],color = "#999999", label = "Particle Lvl"    )
+    hep.histplot(hist4, n_bins, ax=axs[plt_r,plt_z],color = "red", alpha = 0.5)   
+    
+    #SH get plot weights 
+    sample_plot_weight = retransformed_samples[:, weight_sample_index]
+    val_gen_plot_weight = val_data[:, weight_gen_index]
+    val_rec_plot_weight = val_data[:, weight_rec_index]
+    train_gen_plot_weight = train_data[:, weight_gen_index]
+    val_plt_gen_plot_weight = val_data_plot[:,weight_gen_index] # Ohne weight cut 
+
+    sample_plot_weight = sample_plot_weight / np.sum(sample_plot_weight)
+    val_gen_plot_weight = val_gen_plot_weight / np.sum(val_gen_plot_weight)
+    val_rec_plot_weight = val_rec_plot_weight / np.sum(val_rec_plot_weight)
+    train_gen_plot_weight = train_gen_plot_weight / np.sum(train_gen_plot_weight)
+    val_plt_gen_plot_weight = val_plt_gen_plot_weight / np.sum(val_plt_gen_plot_weight)
     
     #_________________________________________________________________________________________________________________
     #--SH: Plot Weight
     upper_border = 1000 #300
     step = upper_border // number_of_bins
     n_bins = [x / 10000000.0 for x in range(0,upper_border+1,step)]
-    
-    
-    #SH: To choose a single bin
-    target_bin_index = 10
-    bin_min = bin_edges[target_bin_index]
-    bin_max = bin_edges[target_bin_index + 1]
-    
-    selected_samples = retransformed_samples[
-    (retransformed_samples[:, zeta_sample_index] >= bin_min) &
-    (retransformed_samples[:, zeta_sample_index] < bin_max)]   
-    selected_samples = retransformed_samples 
+   
     
     hist1,_ = np.histogram(retransformed_samples[:,weight_sample_index], bins= n_bins)
     hist2,_ = np.histogram(val_data[:,weight_rec_index]    ,bins= n_bins)
     hist3,_ = np.histogram(val_data[:,weight_gen_index] , bins= n_bins)
     hist4 = np.divide(hist1, hist3, where=hist3!=0)
     
-    hep.histplot(hist1,       n_bins, ax=axs[0,1],color = "red",alpha = 0.5,      label = "ML Val Particle Lvl", histtype="fill")
-    hep.histplot(hist2,       n_bins, ax=axs[0,1],color = "black",   label = "Val Detector Lvl") 
-    hep.histplot(hist3,       n_bins, ax=axs[0,1],color = "#999999", label = "Particle Lvl"    )
-    hep.histplot(hist4, n_bins, ax=axs[1,1],color = "red", alpha = 0.5)
+    hep.histplot(hist1,       n_bins, ax=axs[plt_d,plt_w],color = "red",alpha = 1,      label = "ML Val Particle Lvl")#, histtype="fill")
+    hep.histplot(hist2,       n_bins, ax=axs[plt_d,plt_w],color = "black",   label = "Val Detector Lvl") 
+    hep.histplot(hist3,       n_bins, ax=axs[plt_d,plt_w],color = "#999999", label = "Particle Lvl"    )
+    hep.histplot(hist4, n_bins, ax=axs[plt_r,plt_w],color = "red", alpha = 0.5)
     
     #_________________________________________________________________________________________________________________
     #--SH: Plot Weighted Zeta'
@@ -319,74 +302,65 @@ for modelname in models:
     step = upper_border // number_of_bins
     n_bins = [x / 100.0 for x in range(0,upper_border+1,step)] 
     
-    total_events_hist3 = np.sum(val_data[:, weight_gen_index])
-    total_events_hist5 = np.sum(train_data[:, weight_gen_index])
-    total_events_hist6 = np.sum(val_data_plot[:, weight_gen_index])
-    scaling_factor = total_events_hist3 / total_events_hist5
-    scaling_factor_val_plot = total_events_hist3 / total_events_hist6
-    
-    hist1, bin_edges = np.histogram(selected_samples[:,zeta_sample_index] , weights= selected_samples[:,weight_sample_index] , bins= n_bins)
-    hist2,_ = np.histogram(val_data[:,zeta_rec_index]  , weights= val_data[:,weight_rec_index]   , bins= n_bins)
-    hist3,_ = np.histogram(val_data[:,zeta_gen_index]  , weights= val_data[:,weight_gen_index]   , bins= n_bins)
+    hist1, bin_edges = np.histogram(retransformed_samples[:,zeta_sample_index] , weights= sample_plot_weight , bins= n_bins)
+    hist2,_ = np.histogram(val_data[:,zeta_rec_index]  , weights= val_rec_plot_weight   , bins= n_bins)
+    hist3,_ = np.histogram(val_data[:,zeta_gen_index]  , weights= val_gen_plot_weight   , bins= n_bins)
     hist4 = np.divide(hist1, hist3, where=hist3!=0)
-    hist5,_ = np.histogram(train_data[:,zeta_gen_index] , weights= train_data[:,weight_gen_index] * scaling_factor  , bins= n_bins)
-    hist6,_ = np.histogram(val_data_plot[:,zeta_gen_index]  , weights= val_data_plot[:,weight_gen_index] * scaling_factor_val_plot   , bins= n_bins)
+    hist5,_ = np.histogram(train_data[:,zeta_gen_index] , weights= train_gen_plot_weight  , bins= n_bins)
+    hist6,_ = np.histogram(val_data_plot[:,zeta_gen_index]  , weights=  val_plt_gen_plot_weight  , bins= n_bins)
     
-    hist1_error, _ = np.histogram(selected_samples[:,zeta_sample_index] , weights= selected_samples[:,weight_sample_index]**2 , bins= n_bins) 
+    hist1_error, _ = np.histogram(retransformed_samples[:,zeta_sample_index] , weights= sample_plot_weight**2 , bins= n_bins) 
     hist1_error = np.sqrt(hist1_error)
-    hist2_error, _ = np.histogram(val_data[:,zeta_rec_index]  , weights= val_data[:,weight_rec_index]**2   , bins= n_bins)
+    hist2_error, _ = np.histogram(val_data[:,zeta_rec_index]  , weights= val_rec_plot_weight**2   , bins= n_bins)
     hist2_error = np.sqrt(hist2_error)
-    hist3_error, _ = np.histogram(val_data[:,zeta_gen_index]  , weights= val_data[:,weight_gen_index]**2   , bins= n_bins)
+    hist3_error, _ = np.histogram(val_data[:,zeta_gen_index]  , weights= val_gen_plot_weight**2   , bins= n_bins)
     hist3_error = np.sqrt(hist3_error)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-
     
-    hep.histplot(hist1,       n_bins, ax=axs[0,2],color = "red",alpha = 0.5,      label = "ML Val Particle Lvl", histtype="fill")
-    hep.histplot(hist2,       n_bins, ax=axs[0,2],color = "black",   label = "Val Detector Lvl") 
-    hep.histplot(hist3,       n_bins, ax=axs[0,2],color = "#999999", label = "Particle Lvl"    ) # grau
-    hep.histplot(hist5,       n_bins, ax=axs[0,2],color = "#0352fc", label = "Train Particle Lvl"    ) # Blue comparison Histogramm
-    #hep.histplot(hist6,       n_bins, ax=axs[0,2],color = "green",alpha = 0.7, label = "Val Particle Lvl wo Filter") # Green comparison Histogramm
-    hep.histplot(hist4, n_bins, ax=axs[1,2],color = "red", alpha = 0.5)
-    # Add error bars
-    axs[0,2].errorbar(bin_centers, hist1, yerr=hist1_error, fmt='none', ecolor='red', alpha=0.5, capsize=5, capthick=1)
-    
+    hep.histplot(hist1,       n_bins, ax=axs[plt_d,plt_wz],color = "red",alpha = 1)#,histtype="fill",label = "ML Val Particle Lvl")
+    hep.histplot(hist2,       n_bins, ax=axs[plt_d,plt_wz],color = "black",   label = "Val Detector Lvl") 
+    hep.histplot(hist3,       n_bins, ax=axs[plt_d,plt_wz],color = "#999999", label = "Particle Lvl"    ) # grau
+    #hep.histplot(hist5,       n_bins, ax=axs[plt_d,plt_wz],color = "#0352fc", label = "Train Particle Lvl"    ) # Blue comparison Histogramm
+    #hep.histplot(hist6,       n_bins, ax=axs[plt_d,plt_wz],color = "green",alpha = 0.7, label = "Val Particle Lvl wo Filter") # Green comparison Histogramm
+    hep.histplot(hist4, n_bins, ax=axs[plt_r,plt_wz],color = "red", alpha = 0.5)
 
-    weight_squared = calc_squared_weights(selected_samples[:,zeta_sample_index] , weights= selected_samples[:,weight_sample_index] , bins= n_bins)
+    axs[plt_d,plt_wz].errorbar(bin_centers, hist1, yerr=hist1_error, fmt='none', ecolor='red', alpha=0.5, capsize=5, capthick=1)     # Add error bars
+    
+    weight_squared = calc_squared_weights(retransformed_samples[:,zeta_sample_index] , weights= sample_plot_weight , bins= n_bins)
     chi2 = calculate_chisq(hist1,hist3,weight_squared)
     
     print("Chi^2: " + str(round(chi2,3)))
     
     #_________________________________________________________________________________________________________________
     #--SH: Plot Style and Axis
-    axs[0,0].set_yscale("log")
-    axs[0,1].set_yscale("log")
-    #axs[0,2].set_yscale("log")
+    axs[plt_d,plt_z].set_yscale("log")
+    axs[plt_d,plt_w].set_yscale("log")
     
-    axs[0,0].legend(frameon = False, fontsize="18")
-    axs[0,1].legend(frameon = False, fontsize="18")
-    axs[0,2].legend(frameon = False, fontsize="14", loc=8)
+    #axs[plt_d,plt_z].legend(frameon = False, fontsize="18")
+    axs[plt_d,plt_w].legend(frameon = False, fontsize="18")
+    #axs[plt_d,plt_wz].legend(frameon = False, fontsize="14", loc=8)
 
- 
-    axs[1,0].set_ylabel(" $\\frac{\\mathrm{ML Particle Lvl}}{\\mathrm{Val Particle Lvl}}$")
-    axs[1,1].set_ylabel(" $\\frac{\\mathrm{ML Particle Lvl}}{\\mathrm{Val Particle Lvl}}$")
-    axs[1,2].set_ylabel(" $\\frac{\\mathrm{ML Particle Lvl}}{\\mathrm{Val Particle Lvl}}$")
+    axs[plt_r,plt_z].set_ylabel(" $\\frac{\\mathrm{ML Particle Lvl}}{\\mathrm{Val Particle Lvl}}$")
+    axs[plt_r,plt_w].set_ylabel(" $\\frac{\\mathrm{ML Particle Lvl}}{\\mathrm{Val Particle Lvl}}$")
+    axs[plt_r,plt_wz].set_ylabel(" $\\frac{\\mathrm{ML Particle Lvl}}{\\mathrm{Val Particle Lvl}}$")
 
+    axs[plt_r,plt_z].grid(axis = "y")
+    axs[plt_r,plt_w].grid(axis = "y")
+    axs[plt_r,plt_wz].grid(axis = "y")
     
-    axs[1,0].grid(axis = "y")
-    axs[1,1].grid(axis = "y")
-    axs[1,2].grid(axis = "y")
+    axs[plt_r,plt_z].set_ylim([0.7, +1.3])
+    axs[plt_r,plt_w].set_ylim([0.7, +1.3])
+    axs[plt_r,plt_wz].set_ylim([0.7, +1.3])
     
-    axs[1,0].set_ylim([0.7, +1.3])
-    axs[1,1].set_ylim([0.7, +1.3])
-    axs[1,2].set_ylim([0.7, +1.3])
+    formatter = FuncFormatter(lambda x, _: f'{x:.0e}')
+    axs[plt_r,plt_w].xaxis.set_major_formatter(formatter)
     
-    
-    axs[0,0].set_ylim([1, 1e5])
-    axs[0,1].set_ylim([1e3, 1e5])
-    axs[0,0].set_xlim([0, 7])
-    axs[0,1].set_xlim([0, 0.0001])
-    #axs[0,1].set_xlim([0, 0.00003])
-    axs[0,2].set_xlim([0, 7])
+    axs[plt_d,plt_z].set_ylim([1, 1e5])
+    axs[plt_d,plt_w].set_ylim([1e3, 1e5])
+    axs[plt_d,plt_z].set_xlim([0, 7])
+    axs[plt_d,plt_w].set_xlim([0, 0.0001])
+    #axs[0,plt_w].set_xlim([0, 0.00003])
+    axs[plt_d,plt_wz].set_xlim([0, 7])
     
     xlabels = [
         r"$\zeta$ * pt$^2$ / 172.5$^2$",
@@ -396,14 +370,14 @@ for modelname in models:
     ylabels = ["Events","Events","Events (weighted)"]
     
     for col in range(3):
-        axs[1, col].text(
-            1.02, -0.3,
+        axs[plt_r, col].text(
+            1.02, -0.4,
             xlabels[col],
             transform=axs[1, col].transAxes,
             fontsize=16,
             va="top", ha="right"
         )
-        axs[0, col].text(
+        axs[plt_d, col].text(
             -0.1, 1.0,
             ylabels[col],
             transform=axs[0, col].transAxes,
@@ -412,7 +386,6 @@ for modelname in models:
             rotation=90
         )
        
-
     plt.savefig(plot_dir+"/generated_data_"+modelname+".png")
     plt.close("all")
     

@@ -1,2 +1,0 @@
-#!/bin/bash
-python3 ml2a.py --save_model_path="/scratch-cbe/users/simon.hablas/MLUnfolding/models/EEEC_v2/UL2018/nAK82p-AK8pt/shortsidep1/50/all_ptcut2GeV" --plot_dir="EEEC_v2" --train="/scratch-cbe/users/simon.hablas/MLUnfolding/data/EEEC_v2/UL2018/nAK82p-AK8pt/shortsidep1/50/ptcut5GeV/ML_Data_train.npy" --val="/scratch-cbe/users/simon.hablas/MLUnfolding/data/EEEC_v2/UL2018/nAK82p-AK8pt/shortsidep1/50/ptcut5GeV/ML_Data_validate.npy"

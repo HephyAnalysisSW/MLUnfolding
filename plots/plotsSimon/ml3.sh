@@ -1,2 +1,0 @@
-#!/bin/bash
-python3 ml3.py --save_model_path="/scratch-cbe/users/simon.hablas/MLUnfolding/models/EEEC_v5/UL2018/nAK82p-AK8pt/shortsidep1/50/all_ptcut5GeV" --plot_dir="EEEC_v5" --train="/scratch-cbe/users/simon.hablas/MLUnfolding/data/EEEC_v3_with_mass/UL2018/nAK82p-AK8pt/shortsidep1/50/ptcut5GeV/TTbar_older/ML_Data_train.npy" --val="/scratch-cbe/users/simon.hablas/MLUnfolding/data/EEEC_v3_with_mass/UL2018/nAK82p-AK8pt/shortsidep1/50/ptcut5GeV/TTbar_older/ML_Data_validate.npy"

@@ -1,1 +1,0 @@
-python3 ml1.py --load_model_file="/scratch-cbe/users/simon.hablas/MLUnfolding/flowmodels/m1f2e10.pt" --plot_dir="model_50epochen" --train="/scratch-cbe/users/simon.hablas/MLUnfolding/data/MLUnfolding_tmp/Run2018/rec_pass-gen_pass/ML_Data_train.npy" --val="/scratch-cbe/users/simon.hablas/MLUnfolding/data/MLUnfolding_tmp/Run2018/rec_pass-gen_pass/ML_Data_validate.npy"

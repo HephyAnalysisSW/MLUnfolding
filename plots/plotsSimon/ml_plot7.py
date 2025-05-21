@@ -22,31 +22,20 @@ from scipy.stats import linregress
 from MLUnfolding.Tools.user  import plot_directory
 #plot_directory = "./plots"
 
-# Function to calculate sum of squared weights for each bin
-def calc_squared_weights(data, weights, bins):
-    squared_weights = np.square(weights)
-    hist_squared, _ = np.histogram(data, bins=bins, weights=squared_weights)
-    return hist_squared
-
-def calculate_chisq(hist1, hist2, hist_squared1):
-    # Create a mask to exclude rows where hist_squared1 is 0
-    valid_mask = hist_squared1 != 0
-    # Apply the mask to the arrays
-    chi_squared = np.sum(
-        np.square(hist1[valid_mask] - hist2[valid_mask]) / hist_squared1[valid_mask]
-    )
-    return chi_squared
-    
-def get_k(Gamma,m):
-    gam = np.sqrt(m**2 *(m**2 + Gamma**2))
-    k = 2 * np.sqrt(2) * Gamma * gam / ( np.pi * np.sqrt(m**2 + gam) )
-    return k
-
-def bw_reweight(s,m_old,m_new,Gamma,k_old,k_new):
-    k = k_new / k_old
-    
-    a =  ((s**2 - m_old**2)**2 + (m_old**2 * Gamma**2)) / ((s**2 - m_new**2)**2+ (m_new**2 * Gamma**2)) #SH: Beware of denomminator
-    return a*k
+from ml_functions import (calc_squared_weights,calculate_chisq,count_parameters,get_k,bw_reweight)
+from indices import (
+    zeta_gen_index,
+    zeta_rec_index,
+    weight_gen_index,
+    weight_rec_index,
+    pt_gen_index,
+    pt_rec_index,
+    mass_gen_index,
+    mass_jet_gen_index,
+    weight_sample_index,
+    zeta_sample_index,
+    pt_sample_index
+)
 
 
 import argparse
@@ -91,25 +80,6 @@ text_debug= True#False
 plot_debug = False#
 table_debug = False#True#False
 
-#SH To Avoid Index Confusion
-zeta_gen_index = 0
-zeta_rec_index = 1
-weight_gen_index = 2
-weight_rec_index = 3
-pt_gen_index = 4
-pt_rec_index = 5
-mass_gen_index= 6
-mass_jet_gen_index= 7
-
-gen_index = [zeta_gen_index,weight_gen_index,pt_gen_index]
-rec_index = [zeta_rec_index,weight_rec_index,pt_rec_index]
-
-zeta_sample_index = 0
-weight_sample_index = 1
-pt_sample_index = 2
-
-
-sample_index = [zeta_sample_index,weight_sample_index,pt_sample_index]
 
 shifts = [-1,0,1]
 colors = np.array(["red", "blue", "green", "#d62728", "#9467bd", "#8c564b"])
@@ -159,7 +129,6 @@ print("val",val.shape)
 # Parameters
 plt_d = 0  # Data plot row
 plt_r = 1  # Ratio plot row
-
 
 # Normalization and bin setup
 alpha = 0.8
@@ -259,10 +228,11 @@ for shift in shifts:
                         color='#ff0000', ecolor='#ff0000', alpha=0.5, capsize=5, capthick=1,
                         label=f"Unfolded m_t= {m_new} GeV")
                         
-    #SH: truth splines
-    axs[plt_r].plot(x_smooth, y_smooth_val/y_smooth_marker,color='black', alpha=0.8, lw=1)# label="truth Spline",
+    #SH: Truth Lvl / Prediction Lvl Spline in Ratio Pad
+    if False:
+        axs[plt_r].plot(x_smooth, y_smooth_val/y_smooth_marker,color='black', alpha=0.8, lw=1)# label="truth Spline",
     
-    
+    #SH: Einzeichnen der Ausgleichsgerade im Ratio
     ratio2 = np.divide(hist_val_truth, hist_marker, where=hist_marker != 0)
     hep.histplot(ratio2, n_bins, ax=axs[plt_r], color="#0000ff", alpha=0.2)
     slope, intercept, r_value, p_value, std_err = linregress(bin_centers[fit_start:fit_end], ratio2[fit_start:fit_end])
@@ -302,11 +272,18 @@ for shift in shifts:
         va="top", ha="right",
         rotation=90
     )
+    
+    axs[plt_d].legend(
+        bbox_to_anchor=(1.05, 1),
+        loc='upper left',
+        borderaxespad=0.,
+        frameon=False
+    )
 
     #SH:---------------Save -------------------
     dir_name, base_name = os.path.split(args.unfolded)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    plot_filename = f"test_unfld_{m_new}_{timestamp}.png"
+    plot_filename = f"test_unfld_{m_new}.png"
     new_plot_path = os.path.join(dir_name, plot_filename)
     
     print("saved ", new_plot_path)
@@ -384,7 +361,9 @@ for pref_shift in pref_shifts:
     data_filename = f"chi2_to{m_new_truth}.npz"
     new_plot_path = os.path.join(dir_name, plot_filename)
     new_data_path = os.path.join(dir_name, data_filename)
+    
     plt.legend()
+    
     # Save the plot
     
     truth_value = 172.5 + pref_shift

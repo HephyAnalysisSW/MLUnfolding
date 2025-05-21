@@ -1,29 +1,25 @@
-import numpy as np
+#SH To Avoid Index Confusion
+zeta_gen_index = 0
+zeta_rec_index = 1
+weight_gen_index = 2
+weight_rec_index = 3
+pt_gen_index = 4
+pt_rec_index = 5
+mass_gen_index= 6
+mass_jet_gen_index= 7
 
-## defining variable transformation und retransformation
-def normalize_data(in_data, max_val, min_val):
-  new_data = (in_data-min_val)/(max_val-min_val)
-  mask = np.prod(((new_data < 1) & (new_data > 0 )), axis=1, dtype=bool)
-  new_data = new_data[mask]
-  return new_data, mask
+gen_index = [zeta_gen_index,weight_gen_index,pt_gen_index]
+rec_index = [zeta_rec_index,weight_rec_index,pt_rec_index]
 
-def logit_data(in_data):
-  new_data = np.log(in_data/(1-in_data))
-  return new_data
+zeta_sample_index = 0
+weight_sample_index = 1
+pt_sample_index = 2
 
-def standardize_data(in_data, mean_val, std_val):
-  new_data = (in_data - mean_val)/std_val
-  return new_data
+sample_index = [zeta_sample_index,weight_sample_index,pt_sample_index]
 
-## defining their inverse transformations
-def normalize_inverse(in_data, max_val, min_val):
-  new_data = in_data*(max_val-min_val) + min_val
-  return new_data
+plt_w = 1 # SH: plot Weight
+plt_wz = 2#SH: plot weighted Zeta
+plt_z = 0#
 
-def logit_inverse(in_data):
-  new_data = (1+np.exp(-in_data))**(-1)
-  return new_data
-
-def standardize_inverse(in_data, mean_val, std_val):
-  new_data = std_val*in_data + mean_val
-  return new_data
+plt_d = 0 #SH: Plot Data
+plt_r = 1 #SH: Plot Ration Pad

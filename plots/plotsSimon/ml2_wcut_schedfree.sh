@@ -3,11 +3,11 @@
 #SBATCH --output=/scratch/simon.hablas/batch_output/job_%j_%A_%a.out
 #SBATCH --error=/scratch/simon.hablas/batch_output/job_%j_%A_%a.err
 #SBATCH --qos=medium
-#SBATCH --time=1-12:00:00
+#SBATCH --time=1-18:00:00
 #SBATCH --partition=c
-#SBATCH --cpus-per-task=6
+#SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=8G
-#SBATCH --array=0-17
+#SBATCH --array=6
 
 echo "Job started on $(hostname) at $(date)"
 
@@ -44,14 +44,16 @@ N=${PARAMS[0]}
 L=${PARAMS[1]}
 D=${PARAMS[2]}
 
-echo "Running with nodes=$N, layers=$L, depth=$D"
 
-VERSION=$((70 + SLURM_ARRAY_TASK_ID))
+
+VERSION=$((90 + SLURM_ARRAY_TASK_ID))
 echo "VERSION=$VERSION"
+
+echo "Model v{VERSION}: CiNN | 200 Epochen | Schedfree | v4 combined_Data | nodes=${N}, layers=${L}, depth=${D} |"
 
 
 ~/.conda/envs/sf_env/bin/python -u ml2_wcut_schedfree.py \
---save_model_path="/scratch-cbe/users/simon.hablas/MLUnfolding/models/EEEC_v${VERSION}_older/UL2018/nAK82p-AK8pt/shortsidep1/50/all_ptcut5GeV/" \
+--save_model_path="/scratch-cbe/users/simon.hablas/MLUnfolding/models/EEEC_v${VERSION}_older/UL2018_batch256/nAK82p-AK8pt/shortsidep1/50/all_ptcut5GeV/" \
 --train="/scratch-cbe/users/simon.hablas/MLUnfolding/data/EEEC_v4/UL2018/nAK82p-AK8pt/shortsidep1/50/ptcut5GeV/ML_Data_train_combined.npy" \
 --val="/scratch-cbe/users/simon.hablas/MLUnfolding/data/EEEC_v4/UL2018/nAK82p-AK8pt/shortsidep1/50/ptcut5GeV/ML_Data_validate_combined.npy" \
 --training_weight_cut=1.5e-5 \

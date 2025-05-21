@@ -48,6 +48,7 @@ argParser.add_argument('--era',            action='store', type=str, default="UL
 argParser.add_argument('--shuffle',  action='store', type=str, default="random") # random, false, <Pathfile>
 argParser.add_argument('--split',    action='store', type=str, default="random") # random, false, <Pathfile>
 argParser.add_argument('--max_used_part',    action='store', type=int, default=50) # random, false, <Pathfile>
+argParser.add_argument('--pt_cut_particle',    action='store', type=int, default=5) # random, false, <Pathfile>
 args = argParser.parse_args()
 
 ################################################################################
@@ -70,7 +71,7 @@ mc = [UL2018.TTbar,UL2018.TTbar_older,UL2018.TTbar_173p5,UL2018.TTbar_171p5 ]
 
 lumi_scale = 60
 
-pt_particle_cut = 5 #GeV
+pt_particle_cut = args.pt_cut_particle #5 GeV
 
 print(str(pt_particle_cut) + " Gev particle cut in use")
 

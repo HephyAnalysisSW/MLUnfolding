@@ -139,22 +139,23 @@ flow = Flow(transform, base_dist).to(device)
 
 optimizer = AdamWScheduleFree(
     flow.parameters(),
-    lr=learning_rate,        
-    betas=(0.9, 0.999),      
-    eps=1e-8,                
-    weight_decay=0.01,       
-    warmup_steps=1000,       
-    r=0.0,                   
-    weight_lr_power=2.0,     
-    foreach=True             
+    lr=1e-3,
+    weight_decay=0.0001,
+    warmup_steps=1000,
+    r=0.01,
+    weight_lr_power=1.0,
+    betas=(0.9, 0.999),
+    eps=1e-8,
+    foreach=True
 )
+
 
 ## --<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>----<>--
 ## Training
 
 model_id=10
-num_epochs = 200
-batch_size =  512
+num_epochs = 250
+batch_size =  256 
 
 
 if args.nodes >= 256 or args.networkdepth >= 2:
@@ -195,10 +196,10 @@ if args.save_model_path != "NA": # untrained model
             x = torch.tensor(x, device=device).float()
             
             y = transformed_data_shuffle[i_batch*batch_size:(i_batch+1)*batch_size,rec_index] 
-            y = torch.tensor(y, device=device).float()#.view(-1, 1)
+            y = torch.tensor(y, device=device).float()
             
             optimizer.zero_grad()
-            nll = -flow.log_prob(x, context=y) # Feed context
+            nll = -flow.log_prob(x, context=y)
             loss = nll.mean()
 
             if i_batch % 500 == 0:
@@ -213,13 +214,23 @@ if args.save_model_path != "NA": # untrained model
         optimizer.eval()
         flow.eval()
         
-        #Calculate In Error
+        #SH: Calculate Out Error 
+        x_val = val_transformed_data[:,gen_index]
+        x_val = torch.tensor(x_val, device=device).float()
+        y_val = val_transformed_data[:,rec_index]
+        y_val = torch.tensor(y_val, device=device).float()
+        
+        nll_out = -flow.log_prob(x_val, context=y_val)
+        loss_out = nll_out.mean()
+        loss_function_out.append(loss_out.item())
+        
+        #SH: Calculate In Error
         x_train = transformed_data_shuffle[:,gen_index] 
         x_train = torch.tensor(x_train, device=device).float()
         y_train = transformed_data_shuffle[:,rec_index]
-        y_train = torch.tensor(y_train, device=device).float()#.view(-1, 1)
+        y_train = torch.tensor(y_train, device=device).float()
         
-        nll_in = -flow.log_prob(x_train, context=y_train) # Feed context
+        nll_in = -flow.log_prob(x_train, context=y_train)
         loss_in = nll_in.mean()
         loss_function_in.append(loss_in.item())
         
@@ -229,28 +240,14 @@ if args.save_model_path != "NA": # untrained model
                 print("Training stopped early at ",i,"Epochs. loss difference < 1e-4")
                 break
         
-        #Calculate Out Error 
-        x_val = val_transformed_data[:,gen_index] # hier
-        x_val = torch.tensor(x_val, device=device).float()
-        y_val = val_transformed_data[:,rec_index] # hier
-        y_val = torch.tensor(y_val, device=device).float()
-        
-        nll_out = -flow.log_prob(x_val, context=y_val)
-        loss_out = nll_out.mean()
-        loss_function_out.append(loss_out.item())
-        
         if args.save_model_path != "NA":
             save_model_path = os.path.join(args.save_model_path, "weight_cut_" + str(w_cut).replace('.', 'p'))
             if not os.path.exists( save_model_path ): os.makedirs( save_model_path )
-            save_model_file = save_model_path+"/m"+str(model_id)+"f"+str(n_features)+"e"+str(i+1).zfill(3)+"of"+str(num_epochs)+".pt" # 3of50 = after the 3rd training
+            save_model_file = save_model_path+"/m"+str(model_id)+"f"+str(n_features)+"e"+str(i+1).zfill(3)+"of"+str(num_epochs)+".pt"
             torch.save(flow, save_model_file)
         del transformed_data_shuffle
         del permut
-        gc.collect()
-        
-       
-        #scheduler.step()
-        
+        gc.collect()        
         
 now = datetime.now()
 current_time = now.strftime("%H_%M_%S")
@@ -267,5 +264,13 @@ if args.save_model_path != "NA":
     plt.legend()
     plt.savefig(save_model_path+"/loss"+current_time+".png")
     plt.close("all")
+    
+np.savez(
+    os.path.join(save_model_path, "loss" + current_time + ".npz"),
+    it = it,
+    loss_function_in=loss_function_in,
+    loss_function_out=loss_function_out
+)
+
 
 print("training finished!", " plotted in ",save_model_path)
